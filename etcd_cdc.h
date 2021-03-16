@@ -35,6 +35,7 @@ enum kv_key_op {
 	KV_KEY_OP_DELETE,
 	KV_KEY_OP_GET,
 	KV_KEY_OP_RANGE,
+	KV_KEY_OP_WATCH,
 };
 
 int process_inotify_event(struct etcd_cdc_ctx *, char *, int);
@@ -46,6 +47,7 @@ int etcd_kv_put(struct etcd_cdc_ctx *ctx, char *key, char *value);
 int etcd_kv_get(struct etcd_cdc_ctx *ctx, char *key);
 int etcd_kv_range(struct etcd_cdc_ctx *ctx, char *key);
 int etcd_kv_delete(struct etcd_cdc_ctx *ctx, char *key);
+int etcd_kv_watch(struct etcd_cdc_ctx *ctx, char *key);
 
 extern int inotify_fd;
 extern int debug;

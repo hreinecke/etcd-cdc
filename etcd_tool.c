@@ -74,9 +74,11 @@ int main(int argc, char **argv)
 			op = KV_KEY_OP_RANGE;
 		else if (!strcmp(argv[optind], "delete"))
 			op = KV_KEY_OP_DELETE;
+		else if (!strcmp(argv[optind], "watch"))
+			op = KV_KEY_OP_WATCH;
 		else {
 			fprintf(stderr, "Invalid op '%s', must be either "
-				"'get', 'put', 'range', or 'delete'\n",
+				"'get', 'put', 'range', 'delete', or 'watch'\n",
 				argv[optind]);
 			return 1;
 		}	
@@ -120,6 +122,13 @@ int main(int argc, char **argv)
 			exit(1);
 		}
 		etcd_kv_delete(ctx, key);
+		break;
+	case KV_KEY_OP_WATCH:
+		if (optind < argc) {
+			fprintf(stderr, "excess arguments for 'watch'\n");
+			exit(1);
+		}
+		etcd_kv_watch(ctx, key);
 		break;
 	default:
 		fprintf(stderr, "Invalid OP %d\n", op);

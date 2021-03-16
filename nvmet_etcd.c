@@ -164,6 +164,53 @@ out:
 	return size * nmemb;
 }
 
+static size_t
+etcd_parse_watch_response(char *ptr, size_t size, size_t nmemb, void *arg)
+{
+	struct json_object *etcd_resp, *result_obj, *event_obj;
+	struct etcd_cdc_ctx *ctx = arg;
+	int i;
+
+	etcd_resp = json_tokener_parse(ptr);
+	if (!etcd_resp) {
+		fprintf(stderr, "Invalid response '%s'\n", ptr);
+		return 0;
+	}
+	if (ctx->debug)
+		printf("%s\n", json_object_to_json_string_ext(etcd_resp,
+					JSON_C_TO_STRING_PRETTY));
+	result_obj = json_object_object_get(etcd_resp, "result");
+	if (!result_obj)
+		goto out;
+
+	event_obj = json_object_object_get(result_obj, "events");
+	if (!event_obj)
+		goto out;
+	for (i = 0; i < json_object_array_length(event_obj); i++) {
+		struct json_object *kvs_obj, *kv_obj, *key_obj, *value_obj;
+		char *key_str, *value_str;
+
+		kvs_obj = json_object_array_get_idx(event_obj, i);
+		kv_obj = json_object_object_get(kvs_obj, "kv");
+		if (!kv_obj)
+			continue;
+		key_obj = json_object_object_get(kv_obj, "key");
+		if (!key_obj)
+			continue;
+		value_obj = json_object_object_get(kv_obj, "value");
+		if (!value_obj)
+			continue;
+		key_str = base64_decode(json_object_get_string(key_obj));
+		value_str = base64_decode(json_object_get_string(value_obj));
+		printf("%s: %s\n", key_str, value_str);
+		free(key_str);
+		free(value_str);
+	}
+out:
+	json_object_put(etcd_resp);
+	return size * nmemb;
+}
+
 static CURL *etcd_curl_init(struct etcd_cdc_ctx *ctx)
 {
 	CURL *curl;
@@ -226,6 +273,8 @@ int etcd_kv_exec(struct etcd_cdc_ctx *ctx, char *url,
 	}
 
 	post_data = json_object_to_json_string(post_obj);
+	if (ctx->debug)
+		printf("POST %s\n", post_data);
 	err = curl_easy_setopt(curl, CURLOPT_POSTFIELDS, post_data);
 	if (err != CURLE_OK) {
 		fprintf(stderr, "curl setop postfields failed, %s",
@@ -346,6 +395,33 @@ int etcd_kv_delete(struct etcd_cdc_ctx *ctx, char *key)
 			       json_object_new_string(encoded_key));
 
 	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_delete_response);
+
+	free(encoded_key);
+	json_object_put(post_obj);
+        return ret;
+}
+
+int etcd_kv_watch(struct etcd_cdc_ctx *ctx, char *key)
+{
+	char url[1024];
+	struct json_object *post_obj, *req_obj;
+	char *encoded_key, *encoded_range;
+	int ret;
+
+	sprintf(url, "%s://%s:%u/v3/watch",
+		ctx->proto, ctx->host, ctx->port);
+
+	post_obj = json_object_new_object();
+	req_obj = json_object_new_object();
+	encoded_key = base64_encode(key, strlen(key));
+	json_object_object_add(req_obj, "key",
+			       json_object_new_string(encoded_key));
+	encoded_range = base64_encode("\0", 1);
+	json_object_object_add(post_obj, "range_end",
+			       json_object_new_string(encoded_range));
+	json_object_object_add(post_obj, "create_request", req_obj);
+
+	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_watch_response);
 
 	free(encoded_key);
 	json_object_put(post_obj);
