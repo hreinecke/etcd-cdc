@@ -73,32 +73,32 @@ static char *base64_decode(const char *encoded_str)
 }
 
 static size_t
-etcd_parse_set_response(void *ptr, size_t size, size_t nmemb, void *arg)
+etcd_parse_set_response(char *ptr, size_t size, size_t nmemb, void *arg)
 {
 	struct json_object *etcd_resp;
 	struct etcd_cdc_ctx *ctx = arg;
 
 	etcd_resp = json_tokener_parse(ptr);
 	if (!etcd_resp) {
-		fprintf(stderr, "Invalid response '%s'\n", (char *)ptr);
+		fprintf(stderr, "Invalid response '%s'\n", ptr);
 		return 0;
 	}
 	if (ctx->debug)
 		printf("%s\n", json_object_to_json_string_ext(etcd_resp,
-							      JSON_C_TO_STRING_PRETTY));
+					JSON_C_TO_STRING_PRETTY));
 	json_object_put(etcd_resp);
 	return size * nmemb;
 }
 
 static size_t
-etcd_parse_range_response (void *ptr, size_t size, size_t nmemb, void *arg)
+etcd_parse_range_response (char *ptr, size_t size, size_t nmemb, void *arg)
 {
 	struct json_object *etcd_resp, *kvs_obj;
 	int i;
 
 	etcd_resp = json_tokener_parse(ptr);
 	if (!etcd_resp) {
-		fprintf(stderr, "Invalid response '%s'\n", (char *)ptr);
+		fprintf(stderr, "Invalid response '%s'\n", ptr);
 		return 0;
 	}
 	kvs_obj = json_object_object_get(etcd_resp, "kvs");
@@ -136,7 +136,7 @@ out:
 }
 
 static size_t
-etcd_parse_delete_response (void *ptr, size_t size, size_t nmemb, void *arg)
+etcd_parse_delete_response (char *ptr, size_t size, size_t nmemb, void *arg)
 {
 	struct etcd_cdc_ctx *ctx = arg;
 	struct json_object *etcd_resp, *deleted_obj;
@@ -144,7 +144,7 @@ etcd_parse_delete_response (void *ptr, size_t size, size_t nmemb, void *arg)
 
 	etcd_resp = json_tokener_parse(ptr);
 	if (!etcd_resp) {
-		fprintf(stderr, "Invalid response '%s'\n", (char *)ptr);
+		fprintf(stderr, "Invalid response '%s'\n", ptr);
 		return 0;
 	}
 	if (ctx->debug)
@@ -199,21 +199,16 @@ out_err_opt:
 	return NULL;
 }
 
-int etcd_kv_put(struct etcd_cdc_ctx *ctx, char *key, char *value)
+int etcd_kv_exec(struct etcd_cdc_ctx *ctx, char *url,
+		 struct json_object *post_obj, curl_write_callback write_cb)
 {
-	char url[1024];
 	CURL *curl;
 	CURLcode err;
-	struct json_object *post_obj = NULL;
-	char *encoded_key = NULL;
-	char *encoded_value = NULL;
 	const char *post_data;
 
 	curl = etcd_curl_init(ctx);
 	if (!curl)
 		return -1;
-	sprintf(url, "%s://%s:%u/v3/kv/put",
-		ctx->proto, ctx->host, ctx->port);
 
         err = curl_easy_setopt(curl, CURLOPT_URL, url);
 	if (err != CURLE_OK) {
@@ -222,14 +217,54 @@ int etcd_kv_put(struct etcd_cdc_ctx *ctx, char *key, char *value)
 		errno = EINVAL;
 		goto err_out;
 	}
-        err = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
-			       etcd_parse_set_response);
+        err = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
 	if (err != CURLE_OK) {
 		fprintf(stderr, "curl setopt writefunction failed, %s",
 			curl_easy_strerror(err));
 		errno = EINVAL;
 		goto err_out;
 	}
+
+	post_data = json_object_to_json_string(post_obj);
+	err = curl_easy_setopt(curl, CURLOPT_POSTFIELDS, post_data);
+	if (err != CURLE_OK) {
+		fprintf(stderr, "curl setop postfields failed, %s",
+			curl_easy_strerror(err));
+		errno = EINVAL;
+		goto err_out;
+	}
+
+	err = curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, strlen(post_data));
+	if (err != CURLE_OK) {
+		fprintf(stderr, "curl setop postfieldsize failed, %s",
+			curl_easy_strerror(err));
+		errno = EINVAL;
+		goto err_out;
+	}
+
+        err = curl_easy_perform(curl);
+	if (err != CURLE_OK) {
+		fprintf(stderr, "curl perform failed, %s",
+			curl_easy_strerror(err));
+		errno = EIO;
+	}
+
+err_out:
+	curl_easy_cleanup(curl);
+        return err ? -1 : 0;
+}
+
+int etcd_kv_put(struct etcd_cdc_ctx *ctx, char *key, char *value)
+{
+	char url[1024];
+	struct json_object *post_obj = NULL;
+	char *encoded_key = NULL;
+	char *encoded_value = NULL;
+	int ret;
+
+	sprintf(url, "%s://%s:%u/v3/kv/put",
+		ctx->proto, ctx->host, ctx->port);
+
 	post_obj = json_object_new_object();
 	encoded_key = base64_encode(key, strlen(key));
 	json_object_object_add(post_obj, "key",
@@ -237,153 +272,47 @@ int etcd_kv_put(struct etcd_cdc_ctx *ctx, char *key, char *value)
 	encoded_value = base64_encode(value, strlen(value));
 	json_object_object_add(post_obj, "value",
 			       json_object_new_string(encoded_value));
-	post_data = json_object_to_json_string(post_obj);
 
-	err = curl_easy_setopt(curl, CURLOPT_POSTFIELDS, post_data);
-	if (err != CURLE_OK) {
-		fprintf(stderr, "curl setop postfields failed, %s",
-			curl_easy_strerror(err));
-		errno = EINVAL;
-		goto err_out;
-	}
+	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_set_response);
 
-	err = curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, strlen(post_data));
-	if (err != CURLE_OK) {
-		fprintf(stderr, "curl setop postfieldsize failed, %s",
-			curl_easy_strerror(err));
-		errno = EINVAL;
-		goto err_out;
-	}
-
-        err = curl_easy_perform(curl);
-	if (err != CURLE_OK) {
-		fprintf(stderr, "curl perform failed, %s",
-			curl_easy_strerror(err));
-		errno = EIO;
-	}
-
-err_out:
-	if (post_obj)
-		json_object_put(post_obj);
-	if (encoded_key)
-		free(encoded_key);
-	if (encoded_value)
-		free(encoded_value);
-	curl_easy_cleanup(curl);
-        return err ? -1 : 0;
+	free(encoded_value);
+	free(encoded_key);
+	json_object_put(post_obj);
+        return ret;
 }
 
 int etcd_kv_get(struct etcd_cdc_ctx *ctx, char *key)
 {
 	char url[1024];
-	CURL *curl;
-	CURLcode err;
 	struct json_object *post_obj = NULL;
 	char *encoded_key = NULL;
-	const char *post_data;
-
-	curl = etcd_curl_init(ctx);
-	if (!curl)
-		return -1;
+	int ret;
 
 	sprintf(url, "%s://%s:%u/v3/kv/range",
 		ctx->proto, ctx->host, ctx->port);
-
-        err = curl_easy_setopt(curl, CURLOPT_URL, url);
-	if (err != CURLE_OK) {
-		fprintf(stderr, "curl setopt url failed, %s",
-			curl_easy_strerror(err));
-		errno = EINVAL;
-		goto err_out;
-	}
-        err = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
-			       etcd_parse_range_response);
-	if (err != CURLE_OK) {
-		fprintf(stderr, "curl setopt writefunction failed, %s",
-			curl_easy_strerror(err));
-		errno = EINVAL;
-		goto err_out;
-	}
 
 	post_obj = json_object_new_object();
 	encoded_key = base64_encode(key, strlen(key));
 	json_object_object_add(post_obj, "key",
 			       json_object_new_string(encoded_key));
-	post_data = json_object_to_json_string(post_obj);
-	if (ctx->debug)
-		printf("POST %s\n", post_data);
-	err = curl_easy_setopt(curl, CURLOPT_POSTFIELDS, post_data);
-	if (err != CURLE_OK) {
-		fprintf(stderr, "curl setop postfields failed, %s",
-			curl_easy_strerror(err));
-		errno = EINVAL;
-		goto err_out;
-	}
 
-	err = curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, strlen(post_data));
-	if (err != CURLE_OK) {
-		fprintf(stderr, "curl setop postfieldsize failed, %s",
-			curl_easy_strerror(err));
-		errno = EINVAL;
-		goto err_out;
-	}
+	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_range_response);
 
-	err = curl_easy_setopt(curl, CURLOPT_WRITEDATA, ctx);
-	if (err != CURLE_OK) {
-		fprintf(stderr, "curl setopt writedata failed, %s",
-			curl_easy_strerror(err));
-		errno = EINVAL;
-		goto err_out;
-	}
-
-        err = curl_easy_perform(curl);
-	if (err != CURLE_OK) {
-		fprintf(stderr, "curl perform failed, %s",
-			curl_easy_strerror(err));
-		errno = EIO;
-	}
-
-err_out:
-	if (post_obj)
-		json_object_put(post_obj);
-	if (encoded_key)
-		free(encoded_key);
-	curl_easy_cleanup(curl);
-        return err ? -1 : 0;
+	json_object_put(post_obj);
+	free(encoded_key);
+        return ret;
 }
 
 int etcd_kv_range(struct etcd_cdc_ctx *ctx, char *key)
 {
 	char url[1024];
-	CURL *curl;
-	CURLcode err;
 	struct json_object *post_obj = NULL;
 	char *encoded_key = NULL;
 	char *encoded_range = NULL;
-	const char *post_data;
-
-	curl = etcd_curl_init(ctx);
-	if (!curl)
-		return -1;
+	int ret;
 
 	sprintf(url, "%s://%s:%u/v3/kv/range",
 		ctx->proto, ctx->host, ctx->port);
-
-        err = curl_easy_setopt(curl, CURLOPT_URL, url);
-	if (err != CURLE_OK) {
-		fprintf(stderr, "curl setopt url failed, %s",
-			curl_easy_strerror(err));
-		errno = EINVAL;
-		goto err_out;
-	}
-        err = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
-			       etcd_parse_range_response);
-	if (err != CURLE_OK) {
-		fprintf(stderr, "curl setopt writefunction failed, %s",
-			curl_easy_strerror(err));
-		errno = EINVAL;
-		goto err_out;
-	}
 
 	post_obj = json_object_new_object();
 	encoded_key = base64_encode(key, strlen(key));
@@ -392,105 +321,33 @@ int etcd_kv_range(struct etcd_cdc_ctx *ctx, char *key)
 	encoded_range = base64_encode("\0", 1);
 	json_object_object_add(post_obj, "range_end",
 			       json_object_new_string(encoded_range));
-	post_data = json_object_to_json_string(post_obj);
-	if (ctx->debug)
-		printf("POST %s\n", post_data);
-	err = curl_easy_setopt(curl, CURLOPT_POSTFIELDS, post_data);
-	if (err != CURLE_OK) {
-		fprintf(stderr, "curl setop postfields failed, %s",
-			curl_easy_strerror(err));
-		errno = EINVAL;
-		goto err_out;
-	}
 
-	err = curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, strlen(post_data));
-	if (err != CURLE_OK) {
-		fprintf(stderr, "curl setop postfieldsize failed, %s",
-			curl_easy_strerror(err));
-		errno = EINVAL;
-		goto err_out;
-	}
+	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_range_response);
 
-        err = curl_easy_perform(curl);
-	if (err != CURLE_OK) {
-		fprintf(stderr, "curl perform failed");
-		errno = EIO;
-	}
-err_out:
-	if (post_obj)
-		json_object_put(post_obj);
-	if (encoded_key)
-		free(encoded_key);
-	if (encoded_range)
-		free(encoded_range);
-	curl_easy_cleanup(curl);
-        return err ? -1 : 0;
+	free(encoded_range);
+	free(encoded_key);
+	json_object_put(post_obj);
+        return ret;
 }
 
 int etcd_kv_delete(struct etcd_cdc_ctx *ctx, char *key)
 {
 	char url[1024];
-	CURL *curl;
-	CURLcode err;
 	struct json_object *post_obj = NULL;
 	char *encoded_key = NULL;
-	const char *post_data;
+	int ret;
 
 	sprintf(url, "%s://%s:%u/v3/kv/deleterange",
 		ctx->proto, ctx->host, ctx->port);
-
-	curl = etcd_curl_init(ctx);
-	if (!curl)
-		return -1;
-        err = curl_easy_setopt(curl, CURLOPT_URL, url);
-	if (err != CURLE_OK) {
-		fprintf(stderr, "curl setopt url failed, %s",
-			curl_easy_strerror(err));
-		errno = EINVAL;
-		goto err_out;
-	}
-        err = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
-			       etcd_parse_delete_response);
-	if (err != CURLE_OK) {
-		fprintf(stderr, "curl setopt writefunction failed, %s",
-			curl_easy_strerror(err));
-		errno = EINVAL;
-		goto err_out;
-	}
 
 	post_obj = json_object_new_object();
 	encoded_key = base64_encode(key, strlen(key));
 	json_object_object_add(post_obj, "key",
 			       json_object_new_string(encoded_key));
-	post_data = json_object_to_json_string(post_obj);
-	if (ctx->debug)
-		printf("POST %s\n", post_data);
-	err = curl_easy_setopt(curl, CURLOPT_POSTFIELDS, post_data);
-	if (err != CURLE_OK) {
-		fprintf(stderr, "curl setop postfields failed, %s",
-			curl_easy_strerror(err));
-		errno = EINVAL;
-		goto err_out;
-	}
 
-	err = curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, strlen(post_data));
-	if (err != CURLE_OK) {
-		fprintf(stderr, "curl setop postfieldsize failed, %s",
-			curl_easy_strerror(err));
-		errno = EINVAL;
-		goto err_out;
-	}
+	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_delete_response);
 
-        err = curl_easy_perform(curl);
-	if (err != CURLE_OK) {
-		fprintf(stderr, "curl perform failed");
-		errno = EIO;
-	}
-err_out:
-	if (post_obj)
-		json_object_put(post_obj);
-	if (encoded_key)
-		free(encoded_key);
-	curl_easy_cleanup(curl);
-        return err ? -1 : 0;
+	free(encoded_key);
+	json_object_put(post_obj);
+        return ret;
 }
