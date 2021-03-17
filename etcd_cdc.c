@@ -61,7 +61,7 @@ static void inotify_loop(struct etcd_cdc_ctx *ctx)
 		FD_ZERO(&rfd);
 		FD_SET(signal_fd, &rfd);
 		FD_SET(inotify_fd, &rfd);
-		tmo.tv_sec = 5;
+		tmo.tv_sec = ctx->ttl / 5;
 		tmo.tv_usec = 0;
 		ret = select(inotify_fd + 1, &rfd, NULL, NULL, &tmo);
 		if (ret < 0) {
@@ -71,7 +71,8 @@ static void inotify_loop(struct etcd_cdc_ctx *ctx)
 			break;
 		}
 		if (ret == 0) {
-			/* Select timeout */
+			/* Select timeout, refresh lease */
+			ret = etcd_lease_keepalive(ctx);
 			continue;
 		}
 		if (!FD_ISSET(inotify_fd, &rfd)) {
@@ -125,12 +126,13 @@ int parse_opts(struct etcd_cdc_ctx *ctx, int argc, char *argv[])
 		{"port", required_argument, 0, 'p'},
 		{"host", required_argument, 0, 'h'},
 		{"ssl", no_argument, 0, 's'},
+		{"ttl", required_argument, 0, 't'},
 		{"verbose", no_argument, 0, 'v'},
 	};
 	char c;
 	int getopt_ind;
 
-	while ((c = getopt_long(argc, argv, "c:e:p:h:sv",
+	while ((c = getopt_long(argc, argv, "c:e:p:h:st:v",
 				getopt_arg, &getopt_ind)) != -1) {
 		switch (c) {
 		case 'c':
@@ -148,6 +150,9 @@ int parse_opts(struct etcd_cdc_ctx *ctx, int argc, char *argv[])
 		case 's':
 			ctx->proto = "https";
 			break;
+		case 't':
+			ctx->ttl = atoi(optarg);
+			break;
 		case 'v':
 			ctx->debug++;
 			break;
@@ -160,6 +165,7 @@ int main (int argc, char *argv[])
 {
 	struct etcd_cdc_ctx *ctx;
 	sigset_t sigmask;
+	int ret;
 
 	ctx = malloc(sizeof(struct etcd_cdc_ctx));
 	if (!ctx) {
@@ -171,9 +177,14 @@ int main (int argc, char *argv[])
 	ctx->proto = default_proto;
 	ctx->prefix = default_prefix;
 	ctx->port = 2379;
+	ctx->lease = -1;
+	ctx->ttl = 30;
 
 	parse_opts(ctx, argc, argv);
 
+	ret = etcd_lease_grant(ctx);
+	if (ret < 0)
+		exit(1);
 	sigemptyset(&sigmask);
 	sigaddset(&sigmask, SIGINT);
 	sigaddset(&sigmask, SIGTERM);
@@ -202,6 +213,7 @@ int main (int argc, char *argv[])
 
 	close(inotify_fd);
 	close(signal_fd);
+	etcd_lease_revoke(ctx);
 	free(ctx);
 	return 0;
 }

@@ -28,6 +28,8 @@ struct etcd_cdc_ctx {
 	char *configfs;
 	char *prefix;
 	int debug;
+	int64_t lease;
+	int ttl;
 };
 
 enum kv_key_op {
@@ -48,6 +50,10 @@ int etcd_kv_get(struct etcd_cdc_ctx *ctx, char *key);
 int etcd_kv_range(struct etcd_cdc_ctx *ctx, char *key);
 int etcd_kv_delete(struct etcd_cdc_ctx *ctx, char *key);
 int etcd_kv_watch(struct etcd_cdc_ctx *ctx, char *key);
+
+int etcd_lease_grant(struct etcd_cdc_ctx *ctx);
+int etcd_lease_keepalive(struct etcd_cdc_ctx *ctx);
+int etcd_lease_revoke(struct etcd_cdc_ctx *ctx);
 
 extern int inotify_fd;
 extern int debug;
