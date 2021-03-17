@@ -456,8 +456,10 @@ etcd_parse_lease_response(char *ptr, size_t size, size_t nmemb, void *arg)
 		if (error_obj)
 			fprintf(stderr, "Failed to revoke lease, %s\n",
 				json_object_get_string(error_obj));
-		else
+		else {
+			printf("Revoke lease %ld\n", ctx->lease);
 			ctx->lease = 0;
+		}
 		goto out;
 	}
 	id_obj = json_object_object_get(etcd_resp, "ID");
@@ -469,6 +471,7 @@ etcd_parse_lease_response(char *ptr, size_t size, size_t nmemb, void *arg)
 		ctx->ttl = -1;
 	} else {
 		ctx->ttl = json_object_get_int(ttl_obj);
+		printf("Granted lease %ld ttl %d\n", ctx->lease, ctx->ttl);
 	}
 out:
 	json_object_put(etcd_resp);
@@ -507,6 +510,46 @@ int etcd_lease_grant(struct etcd_cdc_ctx *ctx)
         return ret;
 }
 
+static size_t
+etcd_parse_keepalive_response(char *ptr, size_t size, size_t nmemb, void *arg)
+{
+	struct json_object *etcd_resp, *result_obj;
+	struct etcd_cdc_ctx *ctx = arg;
+
+	etcd_resp = json_tokener_parse(ptr);
+	if (!etcd_resp) {
+		fprintf(stderr, "Invalid response '%s'\n", ptr);
+		return 0;
+	}
+	if (ctx->debug)
+		printf("%s\n", json_object_to_json_string_ext(etcd_resp,
+				      JSON_C_TO_STRING_PRETTY));
+	result_obj = json_object_object_get(etcd_resp, "result");
+	if (result_obj) {
+		struct json_object *id_obj, *ttl_obj;
+		int64_t lease;
+
+		id_obj = json_object_object_get(result_obj, "ID");
+		if (!id_obj)
+			goto out;
+		lease = json_object_get_int64(id_obj);
+		if (lease != ctx->lease) {
+			fprintf(stderr, "lease mismatch\n");
+			goto out;
+		}
+		ttl_obj = json_object_object_get(result_obj, "TTL");
+		if (!ttl_obj) {
+			ctx->ttl = -1;
+		} else {
+			ctx->ttl = json_object_get_int(ttl_obj);
+			printf("Refreshed lease %ld ttl %d\n", ctx->lease, ctx->ttl);
+		}
+	}
+out:
+	json_object_put(etcd_resp);
+	return size * nmemb;
+}
+
 int etcd_lease_keepalive(struct etcd_cdc_ctx *ctx)
 {
 	char url[1024];
@@ -522,7 +565,7 @@ int etcd_lease_keepalive(struct etcd_cdc_ctx *ctx)
 	json_object_object_add(post_obj, "TTL",
 			       json_object_new_int(ctx->ttl));
 
-	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_lease_response);
+	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_keepalive_response);
 	if (!ret) {
 		if (ctx->ttl == -1) {
 			fprintf(stderr, "lease expired\n");
@@ -547,7 +590,7 @@ int etcd_lease_timetolive(struct etcd_cdc_ctx *ctx)
 	json_object_object_add(post_obj, "ID",
 			       json_object_new_int64(ctx->lease));
 
-	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_lease_response);
+	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_keepalive_response);
 	if (!ret) {
 		if (ctx->ttl == -1) {
 			fprintf(stderr, "lease expired\n");
