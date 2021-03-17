@@ -172,6 +172,7 @@ int main (int argc, char *argv[])
 		fprintf(stderr, "cannot allocate context\n");
 		exit(1);
 	}
+	memset(ctx, 0, sizeof(struct etcd_cdc_ctx));
 	ctx->host = default_host;
 	ctx->configfs = default_configfs;
 	ctx->proto = default_proto;

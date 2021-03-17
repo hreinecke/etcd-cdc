@@ -94,6 +94,7 @@ static size_t
 etcd_parse_range_response (char *ptr, size_t size, size_t nmemb, void *arg)
 {
 	struct json_object *etcd_resp, *kvs_obj;
+	struct etcd_cdc_ctx *ctx = arg;
 	int i;
 
 	etcd_resp = json_tokener_parse(ptr);
@@ -101,6 +102,9 @@ etcd_parse_range_response (char *ptr, size_t size, size_t nmemb, void *arg)
 		fprintf(stderr, "Invalid response '%s'\n", ptr);
 		return 0;
 	}
+	if (ctx->debug)
+		printf("%s\n", json_object_to_json_string_ext(etcd_resp,
+					JSON_C_TO_STRING_PRETTY));
 	kvs_obj = json_object_object_get(etcd_resp, "kvs");
 	if (!kvs_obj) {
 		fprintf(stderr, "Invalid response, 'kvs' not found; resp '%s'\n",
@@ -235,6 +239,10 @@ static CURL *etcd_curl_init(struct etcd_cdc_ctx *ctx)
 	err = curl_easy_setopt(curl, opt, 1L);
 	if (err != CURLE_OK)
 		goto out_err_opt;
+	opt = CURLOPT_WRITEDATA;
+	err = curl_easy_setopt(curl, opt, ctx);
+	if (err != CURLE_OK)
+		goto out_err_opt;
 	if (ctx->debug)
 		curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
 	return curl;
@@ -273,8 +281,6 @@ int etcd_kv_exec(struct etcd_cdc_ctx *ctx, char *url,
 	}
 
 	post_data = json_object_to_json_string(post_obj);
-	if (ctx->debug)
-		printf("POST %s\n", post_data);
 	err = curl_easy_setopt(curl, CURLOPT_POSTFIELDS, post_data);
 	if (err != CURLE_OK) {
 		fprintf(stderr, "curl setop postfields failed, %s",
