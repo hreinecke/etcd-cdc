@@ -97,8 +97,13 @@ etcd_parse_range_response (char *ptr, size_t size, size_t nmemb, void *arg)
 	struct etcd_cdc_ctx *ctx = arg;
 	int i;
 
-	etcd_resp = json_tokener_parse(ptr);
+	etcd_resp = json_tokener_parse_ex(ctx->tokener, ptr,
+					  size * nmemb);
 	if (!etcd_resp) {
+		if (json_tokener_get_error(ctx->tokener) == json_tokener_continue) {
+			/* Partial / chunked response; continue */
+			return size * nmemb;
+		}
 		fprintf(stderr, "Invalid response '%s'\n", ptr);
 		return 0;
 	}
@@ -175,8 +180,13 @@ etcd_parse_watch_response(char *ptr, size_t size, size_t nmemb, void *arg)
 	struct etcd_cdc_ctx *ctx = arg;
 	int i;
 
-	etcd_resp = json_tokener_parse(ptr);
+	etcd_resp = json_tokener_parse_ex(ctx->tokener, ptr,
+					  size * nmemb);
 	if (!etcd_resp) {
+		if (json_tokener_get_error(ctx->tokener) == json_tokener_continue) {
+			/* Partial / chunked response; continue */
+			return size * nmemb;
+		}
 		fprintf(stderr, "Invalid response '%s'\n", ptr);
 		return 0;
 	}
@@ -221,14 +231,14 @@ static CURL *etcd_curl_init(struct etcd_cdc_ctx *ctx)
 	CURLoption opt;
 	CURLcode err;
 
-        curl = curl_easy_init();
-        if (!curl) {
+	curl = curl_easy_init();
+	if (!curl) {
 		fprintf(stderr, "curl easy init failed\n");
 		return NULL;
-        }
+	}
 
 	opt = CURLOPT_FOLLOWLOCATION;
-        err = curl_easy_setopt(curl, opt, 1L);
+	err = curl_easy_setopt(curl, opt, 1L);
 	if (err != CURLE_OK)
 		goto out_err_opt;
 	opt = CURLOPT_FORBID_REUSE;
@@ -265,14 +275,14 @@ int etcd_kv_exec(struct etcd_cdc_ctx *ctx, char *url,
 	if (!curl)
 		return -1;
 
-        err = curl_easy_setopt(curl, CURLOPT_URL, url);
+	err = curl_easy_setopt(curl, CURLOPT_URL, url);
 	if (err != CURLE_OK) {
 		fprintf(stderr, "curl setopt url failed, %s",
 			curl_easy_strerror(err));
 		errno = EINVAL;
 		goto err_out;
 	}
-        err = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
+	err = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
 	if (err != CURLE_OK) {
 		fprintf(stderr, "curl setopt writefunction failed, %s",
 			curl_easy_strerror(err));
@@ -297,7 +307,7 @@ int etcd_kv_exec(struct etcd_cdc_ctx *ctx, char *url,
 		goto err_out;
 	}
 
-        err = curl_easy_perform(curl);
+	err = curl_easy_perform(curl);
 	if (err != CURLE_OK) {
 		fprintf(stderr, "curl perform failed, %s",
 			curl_easy_strerror(err));
@@ -306,7 +316,7 @@ int etcd_kv_exec(struct etcd_cdc_ctx *ctx, char *url,
 
 err_out:
 	curl_easy_cleanup(curl);
-        return err ? -1 : 0;
+	return err ? -1 : 0;
 }
 
 int etcd_kv_put(struct etcd_cdc_ctx *ctx, char *key, char *value)
@@ -334,7 +344,7 @@ int etcd_kv_put(struct etcd_cdc_ctx *ctx, char *key, char *value)
 	free(encoded_value);
 	free(encoded_key);
 	json_object_put(post_obj);
-        return ret;
+	return ret;
 }
 
 int etcd_kv_get(struct etcd_cdc_ctx *ctx, char *key)
@@ -347,6 +357,7 @@ int etcd_kv_get(struct etcd_cdc_ctx *ctx, char *key)
 	sprintf(url, "%s://%s:%u/v3/kv/range",
 		ctx->proto, ctx->host, ctx->port);
 
+	ctx->tokener = json_tokener_new_ex(5);
 	post_obj = json_object_new_object();
 	encoded_key = base64_encode(key, strlen(key));
 	json_object_object_add(post_obj, "key",
@@ -356,7 +367,8 @@ int etcd_kv_get(struct etcd_cdc_ctx *ctx, char *key)
 
 	json_object_put(post_obj);
 	free(encoded_key);
-        return ret;
+	json_tokener_free(ctx->tokener);
+	return ret;
 }
 
 int etcd_kv_range(struct etcd_cdc_ctx *ctx, char *key)
@@ -370,6 +382,7 @@ int etcd_kv_range(struct etcd_cdc_ctx *ctx, char *key)
 	sprintf(url, "%s://%s:%u/v3/kv/range",
 		ctx->proto, ctx->host, ctx->port);
 
+	ctx->tokener = json_tokener_new_ex(5);
 	post_obj = json_object_new_object();
 	encoded_key = base64_encode(key, strlen(key));
 	json_object_object_add(post_obj, "key",
@@ -383,7 +396,8 @@ int etcd_kv_range(struct etcd_cdc_ctx *ctx, char *key)
 	free(encoded_range);
 	free(encoded_key);
 	json_object_put(post_obj);
-        return ret;
+	json_tokener_free(ctx->tokener);
+	return ret;
 }
 
 int etcd_kv_delete(struct etcd_cdc_ctx *ctx, char *key)
@@ -405,7 +419,7 @@ int etcd_kv_delete(struct etcd_cdc_ctx *ctx, char *key)
 
 	free(encoded_key);
 	json_object_put(post_obj);
-        return ret;
+	return ret;
 }
 
 int etcd_kv_watch(struct etcd_cdc_ctx *ctx, char *key)
@@ -432,7 +446,7 @@ int etcd_kv_watch(struct etcd_cdc_ctx *ctx, char *key)
 
 	free(encoded_key);
 	json_object_put(post_obj);
-        return ret;
+	return ret;
 }
 
 static size_t
@@ -452,7 +466,7 @@ etcd_parse_lease_response(char *ptr, size_t size, size_t nmemb, void *arg)
 	if (ctx->ttl == -1) {
 		struct json_object *error_obj;
 
-		/* Revoke response */ 
+		/* Revoke response */
 		error_obj = json_object_object_get(etcd_resp, "error");
 		if (error_obj)
 			fprintf(stderr, "Failed to revoke lease, %s\n",
@@ -508,7 +522,7 @@ int etcd_lease_grant(struct etcd_cdc_ctx *ctx)
 		}
 	}
 	json_object_put(post_obj);
-        return ret;
+	return ret;
 }
 
 static size_t
@@ -575,7 +589,7 @@ int etcd_lease_keepalive(struct etcd_cdc_ctx *ctx)
 		}
 	}
 	json_object_put(post_obj);
-        return ret;
+	return ret;
 }
 
 int etcd_lease_timetolive(struct etcd_cdc_ctx *ctx)
@@ -601,7 +615,7 @@ int etcd_lease_timetolive(struct etcd_cdc_ctx *ctx)
 	}
 
 	json_object_put(post_obj);
-        return ret;
+	return ret;
 }
 
 int etcd_lease_revoke(struct etcd_cdc_ctx *ctx)
@@ -620,5 +634,5 @@ int etcd_lease_revoke(struct etcd_cdc_ctx *ctx)
 	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_lease_response);
 
 	json_object_put(post_obj);
-        return ret;
+	return ret;
 }

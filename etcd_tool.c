@@ -45,8 +45,9 @@ int main(int argc, char **argv)
 		fprintf(stderr, "cannot allocate context\n");
 		exit(1);
 	}
-	ctx->host = "localhost";
-	ctx->proto = "http";
+	memset(ctx, 0, sizeof(struct etcd_cdc_ctx));
+	ctx->host = default_host;
+	ctx->proto = default_proto;
 	ctx->port = 2379;
 	while ((c = getopt_long(argc, argv, "p:h:sv",
 				getopt_arg, &getopt_ind)) != -1) {

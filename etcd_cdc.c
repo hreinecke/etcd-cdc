@@ -37,11 +37,6 @@
 
 #include "etcd_cdc.h"
 
-char *default_configfs = "/sys/kernel/config/nvmet";
-char *default_host = "localhost";
-char *default_proto = "http";
-char *default_prefix = "nvmet";
-
 #define INOTIFY_BUFFER_SIZE 8192
 
 int inotify_fd;
