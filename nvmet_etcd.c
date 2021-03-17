@@ -135,9 +135,8 @@ etcd_parse_range_response (char *ptr, size_t size, size_t nmemb, void *arg)
 		}
 		key_str = base64_decode(json_object_get_string(key_obj));
 		value_str = base64_decode(json_object_get_string(value_obj));
-		printf("%s: %s\n", key_str, value_str);
-		free(key_str);
-		free(value_str);
+		json_object_object_add(ctx->resp_obj, key_str,
+				       json_object_new_string(value_str));
 	}
 out:
 	json_object_put(etcd_resp);
@@ -216,9 +215,9 @@ etcd_parse_watch_response(char *ptr, size_t size, size_t nmemb, void *arg)
 			continue;
 		key_str = base64_decode(json_object_get_string(key_obj));
 		value_str = base64_decode(json_object_get_string(value_obj));
+		json_object_object_add(ctx->resp_obj, key_str,
+				       json_object_new_string(value_str));
 		printf("%s: %s\n", key_str, value_str);
-		free(key_str);
-		free(value_str);
 	}
 out:
 	json_object_put(etcd_resp);

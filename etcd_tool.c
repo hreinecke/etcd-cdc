@@ -23,7 +23,13 @@
 #include <getopt.h>
 #include <stdlib.h>
 
+#include <json-c/json.h>
+
 #include "etcd_cdc.h"
+
+static char *default_host = "localhost";
+static char *default_proto = "http";
+static char *default_prefix = "nvmet";
 
 int main(int argc, char **argv)
 {
@@ -37,7 +43,7 @@ int main(int argc, char **argv)
 	int getopt_ind;
 	struct etcd_cdc_ctx *ctx;
 	enum kv_key_op op = KV_KEY_OP_RANGE;
-	char *key = "nvmet/";
+	char *key = default_prefix;
 	char *value = NULL;
 
 	ctx = malloc(sizeof(struct etcd_cdc_ctx));
@@ -91,12 +97,20 @@ int main(int argc, char **argv)
 	}
 	switch (op) {
 	case KV_KEY_OP_GET:
+	{
 		if (optind < argc) {
 			fprintf(stderr, "excess arguments for 'get'\n");
 			exit(1);
 		}
+		ctx->resp_obj = json_object_new_object();
 		etcd_kv_get(ctx, key);
+		json_object_object_foreach(ctx->resp_obj, key, val_obj)
+			printf("%s: %s\n", key,
+			       json_object_get_string(val_obj));
+		json_object_put(ctx->resp_obj);
+		ctx->resp_obj = NULL;
 		break;
+	}
 	case KV_KEY_OP_ADD:
 		if (optind == argc) {
 			fprintf(stderr, "value for 'put' is missing\n");
@@ -111,12 +125,19 @@ int main(int argc, char **argv)
 		etcd_kv_put(ctx, key, value);
 		break;
 	case KV_KEY_OP_RANGE:
+	{
 		if (optind < argc) {
 			fprintf(stderr, "excess arguments for 'range'\n");
 			exit(1);
 		}
+		ctx->resp_obj = json_object_new_object();
 		etcd_kv_range(ctx, key);
+		json_object_object_foreach(ctx->resp_obj, key_obj, val_obj)
+			printf("%s: %s\n", key_obj,
+			       json_object_get_string(val_obj));
+		json_object_put(ctx->resp_obj);
 		break;
+	}
 	case KV_KEY_OP_DELETE:
 		if (optind < argc) {
 			fprintf(stderr, "excess arguments for 'delete'\n");
@@ -125,12 +146,19 @@ int main(int argc, char **argv)
 		etcd_kv_delete(ctx, key);
 		break;
 	case KV_KEY_OP_WATCH:
+	{
 		if (optind < argc) {
 			fprintf(stderr, "excess arguments for 'watch'\n");
 			exit(1);
 		}
+		ctx->resp_obj = json_object_new_object();
 		etcd_kv_watch(ctx, key);
+		json_object_object_foreach(ctx->resp_obj, key_obj, val_obj)
+			printf("%s: %s\n", key_obj,
+			       json_object_get_string(val_obj));
+		json_object_put(ctx->resp_obj);
 		break;
+	}
 	default:
 		fprintf(stderr, "Invalid OP %d\n", op);
 		break;

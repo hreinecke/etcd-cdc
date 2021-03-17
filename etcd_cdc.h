@@ -31,6 +31,7 @@ struct etcd_cdc_ctx {
 	int64_t lease;
 	int ttl;
 	struct json_tokener *tokener;
+	struct json_object *resp_obj;
 };
 
 enum kv_key_op {
@@ -40,11 +41,6 @@ enum kv_key_op {
 	KV_KEY_OP_RANGE,
 	KV_KEY_OP_WATCH,
 };
-
-char *default_configfs = "/sys/kernel/config/nvmet";
-char *default_host = "localhost";
-char *default_proto = "http";
-char *default_prefix = "nvmet";
 
 int process_inotify_event(struct etcd_cdc_ctx *, char *, int);
 int watch_port_dir(struct etcd_cdc_ctx *);
