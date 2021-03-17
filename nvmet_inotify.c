@@ -147,16 +147,14 @@ static void gen_host_kv_key(struct etcd_cdc_ctx *ctx,
 	sprintf(key, "%s/%s/%s/%s/trtype", ctx->prefix,
 		host->hostnqn, subsys->subsysnqn, port->port_id);
 	if (op == KV_KEY_OP_ADD) {
-		if (ctx->debug)
-			printf("add key %s: %s\n", key, port->trtype);
+		printf("add key %s: %s\n", key, port->trtype);
 		if (etcd_kv_put(ctx, key, port->trtype) < 0) {
 			fprintf(stderr, "cannot add key %s, error %d\n",
 				key, errno);
 			return;
 		}
 	} else {
-		if (ctx->debug)
-			printf("delete key %s\n", key);
+		printf("delete key %s\n", key);
 		if (etcd_kv_delete(ctx, key) < 0) {
 			fprintf(stderr, "cannot remove key %s, error %d\n",
 				key, errno);
@@ -166,16 +164,14 @@ static void gen_host_kv_key(struct etcd_cdc_ctx *ctx,
 	sprintf(key, "%s/%s/%s/%s/traddr", ctx->prefix,
 		host->hostnqn, subsys->subsysnqn, port->port_id);
 	if (op == KV_KEY_OP_ADD) {
-		if (ctx->debug)
-			printf("add key %s: %s\n", key, port->traddr);
+		printf("add key %s: %s\n", key, port->traddr);
 		if (etcd_kv_put(ctx, key, port->traddr) < 0) {
 			fprintf(stderr, "cannot add key %s, error %d\n",
 				key, errno);
 			return;
 		}
 	} else {
-		if (ctx->debug)
-			printf("delete key %s\n", key);
+		printf("delete key %s\n", key);
 		if (etcd_kv_delete(ctx, key) < 0) {
 			fprintf(stderr, "cannot remove key %s, error %d\n",
 				key, errno);
@@ -187,15 +183,13 @@ static void gen_host_kv_key(struct etcd_cdc_ctx *ctx,
 	sprintf(key, "%s/%s/%s/%s/trsvcid", ctx->prefix,
 		host->hostnqn, subsys->subsysnqn, port->port_id);
 	if (op == KV_KEY_OP_ADD) {
-		if (ctx->debug)
-			printf("add key %s: %s\n", key, port->trsvcid);
+		printf("add key %s: %s\n", key, port->trsvcid);
 		if (etcd_kv_put(ctx, key, port->trsvcid) < 0) {
 			fprintf(stderr, "cannot add key %s, error %d\n",
 				key, errno);
 		}
 	} else {
-		if (ctx->debug)
-			printf("delete key %s\n", key);
+		printf("delete key %s\n", key);
 		if (etcd_kv_delete(ctx, key) < 0) {
 			fprintf(stderr, "cannot remove key %s, error %d\n",
 				key, errno);

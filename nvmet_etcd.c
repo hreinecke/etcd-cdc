@@ -327,9 +327,10 @@ int etcd_kv_put(struct etcd_cdc_ctx *ctx, char *key, char *value)
 	encoded_value = base64_encode(value, strlen(value));
 	json_object_object_add(post_obj, "value",
 			       json_object_new_string(encoded_value));
+	json_object_object_add(post_obj, "lease",
+			       json_object_new_int64(ctx->lease));
 
 	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_set_response);
-
 	free(encoded_value);
 	free(encoded_key);
 	json_object_put(post_obj);
