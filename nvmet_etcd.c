@@ -73,24 +73,6 @@ static char *base64_decode(const char *encoded_str)
 }
 
 static size_t
-etcd_parse_set_response(char *ptr, size_t size, size_t nmemb, void *arg)
-{
-	struct json_object *etcd_resp;
-	struct etcd_cdc_ctx *ctx = arg;
-
-	etcd_resp = json_tokener_parse(ptr);
-	if (!etcd_resp) {
-		fprintf(stderr, "Invalid response '%s'\n", ptr);
-		return 0;
-	}
-	if (ctx->debug)
-		printf("%s\n", json_object_to_json_string_ext(etcd_resp,
-					JSON_C_TO_STRING_PRETTY));
-	json_object_put(etcd_resp);
-	return size * nmemb;
-}
-
-static size_t
 etcd_parse_range_response (char *ptr, size_t size, size_t nmemb, void *arg)
 {
 	struct json_object *etcd_resp, *kvs_obj;
@@ -104,7 +86,10 @@ etcd_parse_range_response (char *ptr, size_t size, size_t nmemb, void *arg)
 			/* Partial / chunked response; continue */
 			return size * nmemb;
 		}
-		fprintf(stderr, "Invalid response '%s'\n", ptr);
+		json_object_object_add(ctx->resp_obj, "error",
+				       json_object_new_string(ptr));
+		json_object_object_add(ctx->resp_obj, "errno",
+				       json_object_new_int(EBADMSG));
 		return 0;
 	}
 	if (ctx->debug)
@@ -112,8 +97,11 @@ etcd_parse_range_response (char *ptr, size_t size, size_t nmemb, void *arg)
 					JSON_C_TO_STRING_PRETTY));
 	kvs_obj = json_object_object_get(etcd_resp, "kvs");
 	if (!kvs_obj) {
-		fprintf(stderr, "Invalid response, 'kvs' not found; resp '%s'\n",
-			json_object_to_json_string(etcd_resp));
+		char *err_str = "invalid response, 'kvs' not found";
+		json_object_object_add(ctx->resp_obj, "error",
+				       json_object_new_string(err_str));
+		json_object_object_add(ctx->resp_obj, "errno",
+				       json_object_new_int(EBADMSG));
 		goto out;
 	}
 	for (i = 0; i < json_object_array_length(kvs_obj); i++) {
@@ -121,92 +109,6 @@ etcd_parse_range_response (char *ptr, size_t size, size_t nmemb, void *arg)
 		char *key_str, *value_str;
 
 		kv_obj = json_object_array_get_idx(kvs_obj, i);
-		key_obj = json_object_object_get(kv_obj, "key");
-		if (!key_obj) {
-			fprintf(stderr, "Invalid response, 'key' not found\n");
-			fprintf(stderr, "kv '%s'\n", json_object_to_json_string(kv_obj));
-			continue;
-		}
-		value_obj = json_object_object_get(kv_obj, "value");
-		if (!value_obj) {
-			fprintf(stderr, "Invalid response, 'value' not found\n");
-			fprintf(stderr, "kv '%s'\n", json_object_to_json_string(kv_obj));
-			continue;
-		}
-		key_str = base64_decode(json_object_get_string(key_obj));
-		value_str = base64_decode(json_object_get_string(value_obj));
-		json_object_object_add(ctx->resp_obj, key_str,
-				       json_object_new_string(value_str));
-	}
-out:
-	json_object_put(etcd_resp);
-	return size * nmemb;
-}
-
-static size_t
-etcd_parse_delete_response (char *ptr, size_t size, size_t nmemb, void *arg)
-{
-	struct etcd_cdc_ctx *ctx = arg;
-	struct json_object *etcd_resp, *deleted_obj;
-	int deleted = 0;
-
-	etcd_resp = json_tokener_parse(ptr);
-	if (!etcd_resp) {
-		fprintf(stderr, "Invalid response '%s'\n", ptr);
-		return 0;
-	}
-	if (ctx->debug)
-		printf("%s\n", json_object_to_json_string_ext(etcd_resp,
-				JSON_C_TO_STRING_PRETTY));
-
-	deleted_obj = json_object_object_get(etcd_resp, "deleted");
-	if (!deleted_obj) {
-		fprintf(stderr, "delete key failed, invalid response\n");
-		goto out;
-	}
-	deleted = json_object_get_int(deleted_obj);
-	if (!deleted)
-		fprintf(stderr, "delete key failed, key not deleted\n");
-out:
-	json_object_put(etcd_resp);
-	return size * nmemb;
-}
-
-static size_t
-etcd_parse_watch_response(char *ptr, size_t size, size_t nmemb, void *arg)
-{
-	struct json_object *etcd_resp, *result_obj, *event_obj;
-	struct etcd_cdc_ctx *ctx = arg;
-	int i;
-
-	etcd_resp = json_tokener_parse_ex(ctx->tokener, ptr,
-					  size * nmemb);
-	if (!etcd_resp) {
-		if (json_tokener_get_error(ctx->tokener) == json_tokener_continue) {
-			/* Partial / chunked response; continue */
-			return size * nmemb;
-		}
-		fprintf(stderr, "Invalid response '%s'\n", ptr);
-		return 0;
-	}
-	if (ctx->debug)
-		printf("%s\n", json_object_to_json_string_ext(etcd_resp,
-					JSON_C_TO_STRING_PRETTY));
-	result_obj = json_object_object_get(etcd_resp, "result");
-	if (!result_obj)
-		goto out;
-
-	event_obj = json_object_object_get(result_obj, "events");
-	if (!event_obj)
-		goto out;
-	for (i = 0; i < json_object_array_length(event_obj); i++) {
-		struct json_object *kvs_obj, *kv_obj, *key_obj, *value_obj;
-		char *key_str, *value_str;
-
-		kvs_obj = json_object_array_get_idx(event_obj, i);
-		kv_obj = json_object_object_get(kvs_obj, "kv");
-		if (!kv_obj)
-			continue;
 		key_obj = json_object_object_get(kv_obj, "key");
 		if (!key_obj)
 			continue;
@@ -217,7 +119,6 @@ etcd_parse_watch_response(char *ptr, size_t size, size_t nmemb, void *arg)
 		value_str = base64_decode(json_object_get_string(value_obj));
 		json_object_object_add(ctx->resp_obj, key_str,
 				       json_object_new_string(value_str));
-		printf("%s: %s\n", key_str, value_str);
 	}
 out:
 	json_object_put(etcd_resp);
@@ -318,6 +219,25 @@ err_out:
 	return err ? -1 : 0;
 }
 
+static size_t
+etcd_parse_set_response(char *ptr, size_t size, size_t nmemb, void *arg)
+{
+	struct json_object *etcd_resp;
+	struct etcd_cdc_ctx *ctx = arg;
+
+	etcd_resp = json_tokener_parse(ptr);
+	if (!etcd_resp) {
+		json_object_object_add(ctx->resp_obj, "error",
+				       json_object_new_string(ptr));
+		json_object_object_add(ctx->resp_obj, "errno",
+				       json_object_new_int(EBADMSG));
+	} else if (ctx->debug)
+		printf("%s\n", json_object_to_json_string_ext(etcd_resp,
+					JSON_C_TO_STRING_PRETTY));
+	json_object_put(etcd_resp);
+	return size * nmemb;
+}
+
 int etcd_kv_put(struct etcd_cdc_ctx *ctx, char *key, char *value)
 {
 	char url[1024];
@@ -340,6 +260,22 @@ int etcd_kv_put(struct etcd_cdc_ctx *ctx, char *key, char *value)
 			       json_object_new_int64(ctx->lease));
 
 	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_set_response);
+	if (!ret) {
+		struct json_object *err_obj;
+
+		err_obj = json_object_object_get(ctx->resp_obj, "error");
+		if (err_obj) {
+			fprintf(stderr, "%s\n",
+				json_object_get_string(err_obj));
+			errno = EINVAL;
+			ret = -1;
+		}
+		err_obj = json_object_object_get(ctx->resp_obj, "errno");
+		if (err_obj) {
+			errno = json_object_get_int(err_obj);
+			ret = -1;
+		}
+	}
 	free(encoded_value);
 	free(encoded_key);
 	json_object_put(post_obj);
@@ -363,6 +299,22 @@ int etcd_kv_get(struct etcd_cdc_ctx *ctx, char *key)
 			       json_object_new_string(encoded_key));
 
 	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_range_response);
+	if (!ret) {
+		struct json_object *err_obj;
+
+		err_obj = json_object_object_get(ctx->resp_obj, "error");
+		if (err_obj) {
+			fprintf(stderr, "%s\n",
+				json_object_get_string(err_obj));
+			errno = EINVAL;
+			ret = -1;
+		}
+		err_obj = json_object_object_get(ctx->resp_obj, "errno");
+		if (err_obj) {
+			errno = json_object_get_int(err_obj);
+			ret = -1;
+		}
+	}
 
 	json_object_put(post_obj);
 	free(encoded_key);
@@ -391,12 +343,69 @@ int etcd_kv_range(struct etcd_cdc_ctx *ctx, char *key)
 			       json_object_new_string(encoded_range));
 
 	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_range_response);
+	if (!ret) {
+		struct json_object *err_obj;
+
+		err_obj = json_object_object_get(ctx->resp_obj, "error");
+		if (err_obj) {
+			fprintf(stderr, "%s\n",
+				json_object_get_string(err_obj));
+			errno = EINVAL;
+			ret = -1;
+		}
+		err_obj = json_object_object_get(ctx->resp_obj, "errno");
+		if (err_obj) {
+			errno = json_object_get_int(err_obj);
+			ret = -1;
+		}
+	}
 
 	free(encoded_range);
 	free(encoded_key);
 	json_object_put(post_obj);
 	json_tokener_free(ctx->tokener);
 	return ret;
+}
+
+static size_t
+etcd_parse_delete_response (char *ptr, size_t size, size_t nmemb, void *arg)
+{
+	struct etcd_cdc_ctx *ctx = arg;
+	struct json_object *etcd_resp, *deleted_obj;
+	int deleted = 0;
+
+	etcd_resp = json_tokener_parse(ptr);
+	if (!etcd_resp) {
+		json_object_object_add(ctx->resp_obj, "error",
+				       json_object_new_string(ptr));
+		json_object_object_add(ctx->resp_obj, "errno",
+				       json_object_new_int(EBADMSG));
+		goto out;
+	}
+	if (ctx->debug)
+		printf("%s\n", json_object_to_json_string_ext(etcd_resp,
+				JSON_C_TO_STRING_PRETTY));
+
+	deleted_obj = json_object_object_get(etcd_resp, "deleted");
+	if (!deleted_obj) {
+		char *err_str = "invalid response, 'deleted' not found";
+		json_object_object_add(ctx->resp_obj, "error",
+				       json_object_new_string(err_str));
+		json_object_object_add(ctx->resp_obj, "errno",
+				       json_object_new_int(EBADMSG));
+		goto out;
+	}
+	deleted = json_object_get_int(deleted_obj);
+	if (!deleted) {
+		char *err_str = "delete key failed, key not deleted";
+		json_object_object_add(ctx->resp_obj, "error",
+				       json_object_new_string(err_str));
+		json_object_object_add(ctx->resp_obj, "errno",
+				       json_object_new_int(EKEYREJECTED));
+	}
+out:
+	json_object_put(etcd_resp);
+	return size * nmemb;
 }
 
 int etcd_kv_delete(struct etcd_cdc_ctx *ctx, char *key)
@@ -415,10 +424,91 @@ int etcd_kv_delete(struct etcd_cdc_ctx *ctx, char *key)
 			       json_object_new_string(encoded_key));
 
 	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_delete_response);
+	if (!ret) {
+		struct json_object *err_obj;
 
+		err_obj = json_object_object_get(ctx->resp_obj, "error");
+		if (err_obj) {
+			fprintf(stderr, "%s\n",
+				json_object_get_string(err_obj));
+			errno = EINVAL;
+			ret = -1;
+		}
+		err_obj = json_object_object_get(ctx->resp_obj, "errno");
+		if (err_obj) {
+			errno = json_object_get_int(err_obj);
+			ret = -1;
+		}
+	}
 	free(encoded_key);
 	json_object_put(post_obj);
 	return ret;
+}
+
+static size_t
+etcd_parse_watch_response(char *ptr, size_t size, size_t nmemb, void *arg)
+{
+	struct json_object *etcd_resp, *result_obj, *event_obj;
+	struct etcd_cdc_ctx *ctx = arg;
+	int i;
+
+	etcd_resp = json_tokener_parse_ex(ctx->tokener, ptr,
+					  size * nmemb);
+	if (!etcd_resp) {
+		if (json_tokener_get_error(ctx->tokener) == json_tokener_continue) {
+			/* Partial / chunked response; continue */
+			return size * nmemb;
+		}
+		json_object_object_add(ctx->resp_obj, "error",
+				       json_object_new_string(ptr));
+		json_object_object_add(ctx->resp_obj, "errno",
+				       json_object_new_int(EBADMSG));
+		return 0;
+	}
+	if (ctx->debug)
+		printf("%s\n", json_object_to_json_string_ext(etcd_resp,
+					JSON_C_TO_STRING_PRETTY));
+	result_obj = json_object_object_get(etcd_resp, "result");
+	if (!result_obj) {
+		char *err_str = "invalid response, 'result' not found";
+		json_object_object_add(ctx->resp_obj, "error",
+				       json_object_new_string(err_str));
+		json_object_object_add(ctx->resp_obj, "errno",
+				       json_object_new_int(EBADMSG));
+		goto out;
+	}
+
+	event_obj = json_object_object_get(result_obj, "events");
+	if (!event_obj) {
+		char *err_str = "invalid response, 'events' not found";
+		json_object_object_add(ctx->resp_obj, "error",
+				       json_object_new_string(err_str));
+		json_object_object_add(ctx->resp_obj, "errno",
+				       json_object_new_int(EBADMSG));
+		goto out;
+	}
+	for (i = 0; i < json_object_array_length(event_obj); i++) {
+		struct json_object *kvs_obj, *kv_obj, *key_obj, *value_obj;
+		char *key_str, *value_str;
+
+		kvs_obj = json_object_array_get_idx(event_obj, i);
+		kv_obj = json_object_object_get(kvs_obj, "kv");
+		if (!kv_obj)
+			continue;
+		key_obj = json_object_object_get(kv_obj, "key");
+		if (!key_obj)
+			continue;
+		value_obj = json_object_object_get(kv_obj, "value");
+		if (!value_obj)
+			continue;
+		key_str = base64_decode(json_object_get_string(key_obj));
+		value_str = base64_decode(json_object_get_string(value_obj));
+		json_object_object_add(ctx->resp_obj, key_str,
+				       json_object_new_string(value_str));
+	}
+out:
+	json_object_put(etcd_resp);
+	return size * nmemb;
 }
 
 int etcd_kv_watch(struct etcd_cdc_ctx *ctx, char *key)
@@ -442,7 +532,22 @@ int etcd_kv_watch(struct etcd_cdc_ctx *ctx, char *key)
 	json_object_object_add(post_obj, "create_request", req_obj);
 
 	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_watch_response);
+	if (!ret) {
+		struct json_object *err_obj;
 
+		err_obj = json_object_object_get(ctx->resp_obj, "error");
+		if (err_obj) {
+			fprintf(stderr, "%s\n",
+				json_object_get_string(err_obj));
+			errno = EINVAL;
+			ret = -1;
+		}
+		err_obj = json_object_object_get(ctx->resp_obj, "errno");
+		if (err_obj) {
+			errno = json_object_get_int(err_obj);
+			ret = -1;
+		}
+	}
 	free(encoded_key);
 	json_object_put(post_obj);
 	return ret;
@@ -456,8 +561,11 @@ etcd_parse_lease_response(char *ptr, size_t size, size_t nmemb, void *arg)
 
 	etcd_resp = json_tokener_parse(ptr);
 	if (!etcd_resp) {
-		fprintf(stderr, "Invalid response '%s'\n", ptr);
-		return 0;
+		json_object_object_add(ctx->resp_obj, "error",
+				       json_object_new_string(ptr));
+		json_object_object_add(ctx->resp_obj, "errno",
+				       json_object_new_int(EBADMSG));
+		goto out;
 	}
 	if (ctx->debug)
 		printf("%s\n", json_object_to_json_string_ext(etcd_resp,
@@ -467,25 +575,39 @@ etcd_parse_lease_response(char *ptr, size_t size, size_t nmemb, void *arg)
 
 		/* Revoke response */
 		error_obj = json_object_object_get(etcd_resp, "error");
-		if (error_obj)
-			fprintf(stderr, "Failed to revoke lease, %s\n",
-				json_object_get_string(error_obj));
-		else {
+		if (error_obj) {
+			const char *err_str = json_object_get_string(error_obj);
+
+			json_object_object_add(ctx->resp_obj, "error",
+					       json_object_new_string(err_str));
+			json_object_object_add(ctx->resp_obj, "errno",
+					       json_object_new_int(EKEYREJECTED));
+		} else {
 			printf("Revoke lease %ld\n", ctx->lease);
 			ctx->lease = 0;
 		}
 		goto out;
 	}
 	id_obj = json_object_object_get(etcd_resp, "ID");
-	if (!id_obj)
+	if (!id_obj) {
+		char *err_str = "invalid response, 'ID' not found";
+		json_object_object_add(ctx->resp_obj, "error",
+				       json_object_new_string(err_str));
+		json_object_object_add(ctx->resp_obj, "errno",
+				       json_object_new_int(EBADMSG));
 		goto out;
+	}
 	ctx->lease = json_object_get_int64(id_obj);
 	ttl_obj = json_object_object_get(etcd_resp, "TTL");
 	if (!ttl_obj) {
+		char *err_str = "keepalive failed, key expired";
+		json_object_object_add(ctx->resp_obj, "error",
+				       json_object_new_string(err_str));
+		json_object_object_add(ctx->resp_obj, "errno",
+				       json_object_new_int(EKEYEXPIRED));
 		ctx->ttl = -1;
 	} else {
 		ctx->ttl = json_object_get_int(ttl_obj);
-		printf("Granted lease %ld ttl %d\n", ctx->lease, ctx->ttl);
 	}
 out:
 	json_object_put(etcd_resp);
@@ -509,16 +631,29 @@ int etcd_lease_grant(struct etcd_cdc_ctx *ctx)
 
 	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_lease_response);
 	if (!ret) {
-		if (!ctx->lease) {
-			fprintf(stderr, "no lease has been granted\n");
-			errno = ENOKEY;
+		if (!ctx->lease || ctx->ttl < 0) {
+			struct json_object *err_obj;
+
+			err_obj = json_object_object_get(ctx->resp_obj, "error");
+			if (err_obj)
+				fprintf(stderr, "%s\n",
+					json_object_get_string(err_obj));
+			else if (!ctx->lease)
+				fprintf(stderr, "no lease has been granted\n");
+			else
+				fprintf(stderr, "invalid time-to-live value\n");
+			err_obj = json_object_object_get(ctx->resp_obj, "errno");
+			if (err_obj)
+				errno = json_object_get_int(err_obj);
+			else if (!ctx->lease)
+				errno = ENOKEY;
+			else
+				errno = EINVAL;
 			ret = -1;
-		}
-		if (ctx->ttl == -1) {
-			fprintf(stderr, "invalid time-to-live value\n");
-			errno = EINVAL;
-			ret = -1;
-		}
+		} else
+			printf("Granted lease %ld ttl %d\n",
+			       ctx->lease, ctx->ttl);
+
 	}
 	json_object_put(post_obj);
 	return ret;
@@ -529,36 +664,53 @@ etcd_parse_keepalive_response(char *ptr, size_t size, size_t nmemb, void *arg)
 {
 	struct json_object *etcd_resp, *result_obj;
 	struct etcd_cdc_ctx *ctx = arg;
+	struct json_object *id_obj, *ttl_obj;
+	int64_t lease;
 
 	etcd_resp = json_tokener_parse(ptr);
 	if (!etcd_resp) {
-		fprintf(stderr, "Invalid response '%s'\n", ptr);
-		return 0;
+		json_object_object_add(ctx->resp_obj, "error",
+				       json_object_new_string(ptr));
+		json_object_object_add(ctx->resp_obj, "errno",
+				       json_object_new_int(EBADMSG));
+		goto out;
 	}
 	if (ctx->debug)
 		printf("%s\n", json_object_to_json_string_ext(etcd_resp,
 				      JSON_C_TO_STRING_PRETTY));
 	result_obj = json_object_object_get(etcd_resp, "result");
-	if (result_obj) {
-		struct json_object *id_obj, *ttl_obj;
-		int64_t lease;
-
-		id_obj = json_object_object_get(result_obj, "ID");
-		if (!id_obj)
-			goto out;
-		lease = json_object_get_int64(id_obj);
-		if (lease != ctx->lease) {
-			fprintf(stderr, "lease mismatch\n");
-			goto out;
-		}
-		ttl_obj = json_object_object_get(result_obj, "TTL");
-		if (!ttl_obj) {
-			ctx->ttl = -1;
-		} else {
-			ctx->ttl = json_object_get_int(ttl_obj);
-			printf("Refreshed lease %ld ttl %d\n", ctx->lease, ctx->ttl);
-		}
+	if (!result_obj) {
+		char *err_str = "keepalive failed, 'result' not found";
+		json_object_object_add(ctx->resp_obj, "error",
+				       json_object_new_string(err_str));
+		json_object_object_add(ctx->resp_obj, "errno",
+				       json_object_new_int(EBADMSG));
+		goto out;
 	}
+	id_obj = json_object_object_get(result_obj, "ID");
+	if (!id_obj) {
+		char *err_str = "keepalive failed, 'ID' not found";
+		json_object_object_add(ctx->resp_obj, "error",
+				       json_object_new_string(err_str));
+		json_object_object_add(ctx->resp_obj, "errno",
+				       json_object_new_int(EBADMSG));
+		goto out;
+	}
+	lease = json_object_get_int64(id_obj);
+	if (lease != ctx->lease) {
+		char *err_str = "keepalive failed, lease mismatch";
+		json_object_object_add(ctx->resp_obj, "error",
+				       json_object_new_string(err_str));
+		json_object_object_add(ctx->resp_obj, "errno",
+				       json_object_new_int(EKEYREJECTED));
+		goto out;
+	}
+	ttl_obj = json_object_object_get(result_obj, "TTL");
+	if (!ttl_obj)
+		ctx->ttl = -1;
+	else
+		ctx->ttl = json_object_get_int(ttl_obj);
+
 out:
 	json_object_put(etcd_resp);
 	return size * nmemb;
@@ -581,7 +733,21 @@ int etcd_lease_keepalive(struct etcd_cdc_ctx *ctx)
 
 	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_keepalive_response);
 	if (!ret) {
-		if (ctx->ttl == -1) {
+		struct json_object *err_obj;
+
+		err_obj = json_object_object_get(ctx->resp_obj, "error");
+		if (err_obj) {
+			fprintf(stderr, "%s\n",
+				json_object_get_string(err_obj));
+			errno = EINVAL;
+			ret = -1;
+		}
+		err_obj = json_object_object_get(ctx->resp_obj, "errno");
+		if (err_obj) {
+			errno = json_object_get_int(err_obj);
+			ret = -1;
+		}
+		if (!ret && ctx->ttl == -1) {
 			fprintf(stderr, "lease expired\n");
 			errno = EKEYEXPIRED;
 			ret = -1;
@@ -606,7 +772,21 @@ int etcd_lease_timetolive(struct etcd_cdc_ctx *ctx)
 
 	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_keepalive_response);
 	if (!ret) {
-		if (ctx->ttl == -1) {
+		struct json_object *err_obj;
+
+		err_obj = json_object_object_get(ctx->resp_obj, "error");
+		if (err_obj) {
+			fprintf(stderr, "%s\n",
+				json_object_get_string(err_obj));
+			errno = EINVAL;
+			ret = -1;
+		}
+		err_obj = json_object_object_get(ctx->resp_obj, "errno");
+		if (err_obj) {
+			errno = json_object_get_int(err_obj);
+			ret = -1;
+		}
+		if (!ret && ctx->ttl == -1) {
 			fprintf(stderr, "lease expired\n");
 			errno = EKEYEXPIRED;
 			ret = -1;
@@ -631,7 +811,22 @@ int etcd_lease_revoke(struct etcd_cdc_ctx *ctx)
 			       json_object_new_int64(ctx->lease));
 	ctx->ttl = -1;
 	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_lease_response);
+	if (!ret) {
+		struct json_object *err_obj;
 
+		err_obj = json_object_object_get(ctx->resp_obj, "error");
+		if (err_obj) {
+			fprintf(stderr, "%s\n",
+				json_object_get_string(err_obj));
+			errno = EKEYREJECTED;
+			ret = -1;
+		}
+		err_obj = json_object_object_get(ctx->resp_obj, "errno");
+		if (err_obj) {
+			errno = json_object_get_int(err_obj);
+			ret = -1;
+		}
+	}
 	json_object_put(post_obj);
 	return ret;
 }
