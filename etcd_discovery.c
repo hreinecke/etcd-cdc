@@ -47,25 +47,27 @@ static void parse_discovery_response(struct etcd_cdc_ctx *ctx,
 				     struct json_object *resp_obj)
 {
 	json_object_object_foreach(resp_obj, key, val_obj) {
-		char *save, *p, *subsys, *port_id, *attr;
+		char *key_save, *k, *subsys, *port_id;
 		struct disc_db_entry *disc_entry = NULL, *tmp;
+		char *addr, *a, *addr_save;
+		char *traddr = NULL, *trtype = NULL, *trsvcid = NULL;
 
 		if (strncmp(key, ctx->prefix, strlen(ctx->prefix))) {
 			fprintf(stderr, "Skip invalid prefix '%s'\n", key);
 			continue;
 		}
-		p = strtok_r(key + strlen(ctx->prefix), "/", &save);
-		if (!p || !strlen(p)) {
+		k = strtok_r(key + strlen(ctx->prefix), "/", &key_save);
+		if (!k || !strlen(k)) {
 			fprintf(stderr, "Skip invalid key '%s'\n", key);
 			continue;
 		}
-		subsys = p;
-		p = strtok_r(NULL, "/", &save);
-		if (!p || !strlen(p)) {
+		subsys = k;
+		k = strtok_r(NULL, "/", &key_save);
+		if (!k || !strlen(k)) {
 			fprintf(stderr, "Skip invalid key '%s'\n", key);
 			continue;
 		}
-		port_id = p;
+		port_id = k;
 		disc_entry = NULL;
 		list_for_each_entry(tmp, &disc_db_list, entry) {
 			if (!strcmp(tmp->subsys, subsys) &&
@@ -90,25 +92,27 @@ static void parse_discovery_response(struct etcd_cdc_ctx *ctx,
 				       disc_entry->subsys, disc_entry->port_id);
 			list_add(&disc_entry->entry, &disc_db_list);
 		}
-		p = strtok_r(NULL, "/", &save);
-		if (!p || !strlen(p)) {
-			fprintf(stderr, "Skip invalid key '%s'\n", key);
+		addr = strdup(json_object_get_string(val_obj));
+		a = strtok_r(addr, ",", &addr_save);
+		while (a && strlen(a)) {
+			if (!strncmp(a, "trtype=", 7))
+				trtype = a + 7;
+			else if (!strncmp(a, "traddr=", 7))
+				traddr = a + 7;
+			else if (!strncmp(a, "trsvcid=", 8))
+				trsvcid = a + 8;
+			a = strtok_r(NULL, ",", &addr_save);
+		}
+		if (!trtype || !traddr) {
+			fprintf(stderr, "invalid entry %s\n",
+				json_object_get_string(val_obj));
 			continue;
 		}
-		attr = p;
-		if (!strcmp(attr, "trtype")) {
-			disc_entry->cfg.transport =
-				strdup(json_object_get_string(val_obj));
-		} else if (!strcmp(attr, "traddr")) {
-			disc_entry->cfg.traddr =
-				strdup(json_object_get_string(val_obj));
-		} else if (!strcmp(attr, "trsvcid")) {
-			disc_entry->cfg.trsvcid =
-				strdup(json_object_get_string(val_obj));
-		} else if (!strcmp(attr, "host_traddr")) {
-			disc_entry->cfg.host_traddr =
-				strdup(json_object_get_string(val_obj));
-		}
+		disc_entry->cfg.transport = strdup(trtype);
+		disc_entry->cfg.traddr = strdup(traddr);
+		if (trsvcid)
+			disc_entry->cfg.trsvcid = strdup(trsvcid);
+		free(addr);
 	}
 }		
 
