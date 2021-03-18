@@ -388,11 +388,11 @@ etcd_parse_delete_response (char *ptr, size_t size, size_t nmemb, void *arg)
 
 	deleted_obj = json_object_object_get(etcd_resp, "deleted");
 	if (!deleted_obj) {
-		char *err_str = "invalid response, 'deleted' not found";
+		char *err_str = "delete key failed, invalid key";
 		json_object_object_add(ctx->resp_obj, "error",
 				       json_object_new_string(err_str));
 		json_object_object_add(ctx->resp_obj, "errno",
-				       json_object_new_int(EBADMSG));
+				       json_object_new_int(EKEYREJECTED));
 		goto out;
 	}
 	deleted = json_object_get_int(deleted_obj);
