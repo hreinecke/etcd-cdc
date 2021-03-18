@@ -291,8 +291,18 @@ int main(int argc, char **argv)
 		parse_discovery_response(ctx, ctx->resp_obj);
 		exec_discovery(ctx, nvme_root, hostnqn);
 	}
-	
+
 	json_object_put(ctx->resp_obj);
+	ctx->resp_obj = json_object_new_object();
+
+	etcd_kv_watch(ctx, ctx->prefix);
+	if (!ret) {
+		json_object_object_foreach(ctx->resp_obj,
+					   key_obj, val_obj)
+			printf("%s: %s\n", key_obj,
+			       json_object_get_string(val_obj));
+	}
+
 	nvme_free_tree(nvme_root);
 	list_for_each_entry_safe(disc_entry, tmp, &disc_db_list, entry) {
 		list_del_init(&disc_entry->entry);

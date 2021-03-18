@@ -488,26 +488,34 @@ etcd_parse_watch_response(char *ptr, size_t size, size_t nmemb, void *arg)
 		goto out;
 	}
 	for (i = 0; i < json_object_array_length(event_obj); i++) {
-		struct json_object *kvs_obj, *kv_obj, *key_obj, *value_obj;
+		struct json_object *kvs_obj, *kv_obj, *key_obj;
+		struct json_object *type_obj, *value_obj;
 		char *key_str, *value_str;
 
 		kvs_obj = json_object_array_get_idx(event_obj, i);
+		type_obj = json_object_object_get(kvs_obj, "type");
 		kv_obj = json_object_object_get(kvs_obj, "kv");
 		if (!kv_obj)
 			continue;
 		key_obj = json_object_object_get(kv_obj, "key");
 		if (!key_obj)
 			continue;
-		value_obj = json_object_object_get(kv_obj, "value");
-		if (!value_obj)
-			continue;
 		key_str = base64_decode(json_object_get_string(key_obj));
+		value_obj = json_object_object_get(kv_obj, "value");
+		if (!value_obj) {
+			if (!strcmp(json_object_get_string(type_obj), "DELETE"))
+				printf("delete key %s\n", key_str);
+			free(key_str);
+			continue;
+		}
 		value_str = base64_decode(json_object_get_string(value_obj));
-		json_object_object_add(ctx->resp_obj, key_str,
-				       json_object_new_string(value_str));
+		printf("watch key %s value %s\n", key_str, value_str);
+		free(value_str);
+		free(key_str);
 	}
 out:
 	json_object_put(etcd_resp);
+	json_tokener_reset(ctx->tokener);
 	return size * nmemb;
 }
 
@@ -521,13 +529,14 @@ int etcd_kv_watch(struct etcd_cdc_ctx *ctx, char *key)
 	sprintf(url, "%s://%s:%u/v3/watch",
 		ctx->proto, ctx->host, ctx->port);
 
+	ctx->tokener = json_tokener_new_ex(10);
 	post_obj = json_object_new_object();
 	req_obj = json_object_new_object();
 	encoded_key = base64_encode(key, strlen(key));
 	json_object_object_add(req_obj, "key",
 			       json_object_new_string(encoded_key));
 	encoded_range = base64_encode("\0", 1);
-	json_object_object_add(post_obj, "range_end",
+	json_object_object_add(req_obj, "range_end",
 			       json_object_new_string(encoded_range));
 	json_object_object_add(post_obj, "create_request", req_obj);
 
@@ -549,6 +558,7 @@ int etcd_kv_watch(struct etcd_cdc_ctx *ctx, char *key)
 		}
 	}
 	free(encoded_key);
+	free(encoded_range);
 	json_object_put(post_obj);
 	return ret;
 }
