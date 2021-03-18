@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <getopt.h>
+#include <errno.h>
 
 #include <json-c/json.h>
 #include <libnvme.h>
@@ -45,6 +46,7 @@ static void parse_discovery_response(struct etcd_cdc_ctx *ctx,
 			continue;
 		}
 		port_id = p;
+		disc_entry = NULL;
 		list_for_each_entry(tmp, &disc_db_list, entry) {
 			if (!strcmp(tmp->subsys, subsys) &&
 			    !strcmp(tmp->port_id, port_id)) {
@@ -59,8 +61,14 @@ static void parse_discovery_response(struct etcd_cdc_ctx *ctx,
 					"Cannot allocate discovery entry\n");
 				continue;
 			}
+			memset(disc_entry, 0, sizeof(struct disc_db_entry));
+			INIT_LIST_HEAD(&disc_entry->entry);
 			disc_entry->subsys = strdup(subsys);
 			disc_entry->port_id = strdup(port_id);
+			if (ctx->debug)
+				printf("Creating subsys %s port %s\n",
+				       disc_entry->subsys, disc_entry->port_id);
+			list_add(&disc_entry->entry, &disc_db_list);
 		}
 		p = strtok_r(NULL, "/", &save);
 		if (!p || !strlen(p)) {
@@ -93,42 +101,68 @@ static int match_address(struct nvme_fabrics_config *cfg, nvme_ctrl_t c)
 	addr = strdup(nvme_ctrl_get_address(c));
 	p = strtok_r(addr, "/", &save);
 	while (p) {
-		if (!strncmp(p, "traddr=", 7) &&
-		    strcmp(p + 7, cfg->traddr))
-			return 0;
-		if (cfg->trsvcid &&
-		    !strncmp(p, "trsvcid=", 8) &&
-		    strcmp(p + 8, cfg->trsvcid))
-			return 0;
-		if (cfg->host_traddr &&
-		    !strncmp(p, "host_traddr=", 12) &&
-		    strcmp(p + 12, cfg->host_traddr))
-			return 0;
+		char *a = p;
 		p = strtok_r(NULL, "/", &save);
+		if (!strncmp(a, "traddr=", 7) &&
+		    strncmp(a + 7, cfg->traddr, strlen(cfg->traddr))) {
+			printf("traddr mismatch %s %s\n", a + 7, cfg->traddr);
+			return 0;
+		}
+		if (cfg->trsvcid &&
+		    !strncmp(a, "trsvcid=", 8) &&
+		    strncmp(a + 8, cfg->trsvcid, strlen(cfg->trsvcid))) {
+			printf("trsvcid mismatch %s %s\n", a + 8, cfg->trsvcid);
+			return 0;
+		}
+		if (cfg->host_traddr &&
+		    !strncmp(a, "host_traddr=", 12) &&
+		    strncmp(a + 12, cfg->host_traddr,
+			    strlen(cfg->host_traddr))) {
+			printf("host_traddr mismatch %s %s\n",
+			       a + 12, cfg->host_traddr);
+			return 0;
+		}
 		match++;
 	}
 	free(addr);
 	return match;
 }			
 	
-static nvme_ctrl_t find_ctrl(nvme_root_t nvme_root,
+static nvme_ctrl_t find_ctrl(struct etcd_cdc_ctx *ctx, nvme_root_t nvme_root,
 			     struct nvme_fabrics_config *cfg)
 {
 	nvme_subsystem_t subsys;
 
+	if (ctx->debug)
+		printf("looking for %s trtype %s traddr=%s trsvcid=%s\n",
+		       cfg->nqn, cfg->transport, cfg->traddr, cfg->trsvcid);
 	nvme_for_each_subsystem(nvme_root, subsys) {
 		nvme_ctrl_t c;
 
 		nvme_subsystem_for_each_ctrl(subsys, c) {
+			printf("Checking %s %s trtype %s addr %s\n",
+			       nvme_ctrl_get_name(c),
+			       nvme_ctrl_get_subsysnqn(c),
+			       nvme_ctrl_get_transport(c),
+			       nvme_ctrl_get_address(c));
 			if (strcmp(cfg->nqn,
-				   nvme_ctrl_get_subsysnqn(c)))
+				   nvme_ctrl_get_subsysnqn(c))) {
+				if (ctx->debug)
+					printf("subsys mismatch\n");
 				continue;
+			}
 			if (strcmp(cfg->transport,
-				   nvme_ctrl_get_transport(c)))
+				   nvme_ctrl_get_transport(c))) {
+				if (ctx->debug)
+					printf("transport mismatch\n");
 				continue;
-			if (!match_address(cfg, c))
+			}
+			if (!match_address(cfg, c)) {
+				if (ctx->debug)
+					printf("address mismatch\n");
 				continue;
-			printf("Use existing controller %s\n",
+			}
+			printf("Matching controller %s\n",
 			       nvme_ctrl_get_name(c));
 			return c;
 		}
@@ -136,56 +170,31 @@ static nvme_ctrl_t find_ctrl(nvme_root_t nvme_root,
 	return NULL;
 }
 			
-static void exec_connect(struct etcd_cdc_ctx *ctx, nvme_root_t root,
-			 struct disc_db_entry *disc_entry,
-			 struct nvmf_discovery_log *disc_log)
-{
-	int i, numrec = le64_to_cpu(disc_log->numrec);
-	bool discover;
-
-	for (i = 0; i < numrec; i++) {
-		struct nvmf_disc_log_entry *e = &disc_log->entries[i];
-		nvme_ctrl_t c;
-
-		c = find_ctrl(root, &disc_entry->cfg);
-		if (c)
-			continue;
-		c = nvmf_connect_disc_entry(e, &disc_entry->cfg, &discover);
-		if (!c)
-			fprintf(stderr, "Failed to connect\n");
-	}
-}
-			 
 static void exec_discovery(struct etcd_cdc_ctx *ctx, nvme_root_t root,
 			  char *hostnqn)
 {
 	struct disc_db_entry *disc_entry;
-	int ret;
 
 	list_for_each_entry(disc_entry, &disc_db_list, entry) {
-		struct nvmf_discovery_log *log;
 		nvme_ctrl_t c;
-		bool created = false;
 
 		disc_entry->cfg.hostnqn = hostnqn;
-		disc_entry->cfg.nqn = NVME_DISC_SUBSYS_NAME;
+		disc_entry->cfg.nqn = disc_entry->subsys;
 
-		c = find_ctrl(root, &disc_entry->cfg);
-		if (!c) {
-			c = nvmf_add_ctrl(&disc_entry->cfg);
-			created = true;
-		}
-		if (!c) {
-			fprintf(stderr, "no discovery controller found\n");
+		c = find_ctrl(ctx, root, &disc_entry->cfg);
+		if (c) {
+			if (ctx->debug)
+				printf("Skip existing controller %s\n",
+				       nvme_ctrl_get_name(c));
 			continue;
 		}
-		ret = nvmf_get_discovery_log(c, &log, 4);
-		if (!ret)
-			exec_connect(ctx, root, disc_entry, log);
-		if (!created)
-			continue;
-		nvme_ctrl_disconnect(c);
-		nvme_free_ctrl(c);
+		c = nvmf_add_ctrl(&disc_entry->cfg);
+		if (!c)
+			fprintf(stderr,
+				"Failed to create connection, error %d\n", errno);
+		else
+			printf("Created controller %s\n",
+			       nvme_ctrl_get_name(c));
 	}
 }
 
@@ -202,6 +211,7 @@ int main(int argc, char **argv)
 	int getopt_ind;
 	struct etcd_cdc_ctx *ctx;
 	nvme_root_t nvme_root;
+	struct disc_db_entry *disc_entry, *tmp;
 	char *hostnqn;
 	char *prefix = default_prefix;
 	int ret = 0;
@@ -244,13 +254,14 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
-	ctx->prefix = malloc(strlen(prefix) + strlen(hostnqn) + 3);
+	ctx->prefix = malloc(strlen(prefix) + NVMF_NQN_SIZE + 3);
 	if (!ctx->prefix) {
 		fprintf(stderr, "failed to allocate key\n");
 		exit(1);
 	}
 	sprintf(ctx->prefix, "%s/%s/", prefix, hostnqn);
-
+	if (ctx->debug)
+		printf("Using key %s\n", ctx->prefix);
 	nvme_root = nvme_scan();
 
 	ret = etcd_kv_range(ctx, ctx->prefix);
@@ -263,6 +274,12 @@ int main(int argc, char **argv)
 	
 	json_object_put(ctx->resp_obj);
 	nvme_free_tree(nvme_root);
+	list_for_each_entry_safe(disc_entry, tmp, &disc_db_list, entry) {
+		list_del_init(&disc_entry->entry);
+		free(disc_entry->subsys);
+		free(disc_entry->port_id);
+		free(disc_entry);
+	}
 	free(ctx->prefix);
 	free(ctx);
 	return ret < 0 ? 1 : 0;
