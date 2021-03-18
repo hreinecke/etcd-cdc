@@ -45,6 +45,7 @@ int main(int argc, char **argv)
 	enum kv_key_op op = KV_KEY_OP_RANGE;
 	char *key = default_prefix;
 	char *value = NULL;
+	int ret;
 
 	ctx = malloc(sizeof(struct etcd_cdc_ctx));
 	if (!ctx) {
@@ -103,10 +104,13 @@ int main(int argc, char **argv)
 			exit(1);
 		}
 		ctx->resp_obj = json_object_new_object();
-		etcd_kv_get(ctx, key);
-		json_object_object_foreach(ctx->resp_obj, key, val_obj)
-			printf("%s: %s\n", key,
-			       json_object_get_string(val_obj));
+		ret = etcd_kv_get(ctx, key);
+		if (!ret) {
+			json_object_object_foreach(ctx->resp_obj,
+						   key_obj, val_obj)
+				printf("%s: %s\n", key_obj,
+				       json_object_get_string(val_obj));
+		}
 		json_object_put(ctx->resp_obj);
 		ctx->resp_obj = NULL;
 		break;
@@ -122,7 +126,7 @@ int main(int argc, char **argv)
 			fprintf(stderr, "excess arguments for 'put'\n");
 			exit(1);
 		}
-		etcd_kv_put(ctx, key, value);
+		ret = etcd_kv_put(ctx, key, value);
 		break;
 	case KV_KEY_OP_RANGE:
 	{
@@ -131,10 +135,13 @@ int main(int argc, char **argv)
 			exit(1);
 		}
 		ctx->resp_obj = json_object_new_object();
-		etcd_kv_range(ctx, key);
-		json_object_object_foreach(ctx->resp_obj, key_obj, val_obj)
-			printf("%s: %s\n", key_obj,
-			       json_object_get_string(val_obj));
+		ret = etcd_kv_range(ctx, key);
+		if (!ret) {
+			json_object_object_foreach(ctx->resp_obj,
+						   key_obj, val_obj)
+				printf("%s: %s\n", key_obj,
+				       json_object_get_string(val_obj));
+		}
 		json_object_put(ctx->resp_obj);
 		break;
 	}
@@ -143,7 +150,7 @@ int main(int argc, char **argv)
 			fprintf(stderr, "excess arguments for 'delete'\n");
 			exit(1);
 		}
-		etcd_kv_delete(ctx, key);
+		ret = etcd_kv_delete(ctx, key);
 		break;
 	case KV_KEY_OP_WATCH:
 	{
@@ -152,7 +159,7 @@ int main(int argc, char **argv)
 			exit(1);
 		}
 		ctx->resp_obj = json_object_new_object();
-		etcd_kv_watch(ctx, key);
+		ret = etcd_kv_watch(ctx, key);
 		json_object_object_foreach(ctx->resp_obj, key_obj, val_obj)
 			printf("%s: %s\n", key_obj,
 			       json_object_get_string(val_obj));
@@ -161,7 +168,8 @@ int main(int argc, char **argv)
 	}
 	default:
 		fprintf(stderr, "Invalid OP %d\n", op);
+		ret = -1;
 		break;
 	}
-	return 0;
+	return ret < 0 ? 1 : 0;
 }
