@@ -21,6 +21,8 @@
 #ifndef _ETCD_CDC_H
 #define _ETCD_CDC_H
 
+#include <libnvme.h>
+
 struct etcd_cdc_ctx {
 	char *proto;
 	char *host;
@@ -32,6 +34,7 @@ struct etcd_cdc_ctx {
 	int ttl;
 	struct json_tokener *tokener;
 	struct json_object *resp_obj;
+	nvme_root_t nvme_root;
 };
 
 enum kv_key_op {

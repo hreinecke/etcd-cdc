@@ -25,7 +25,6 @@
 #include <errno.h>
 
 #include <json-c/json.h>
-#include <libnvme.h>
 
 #include "list.h"
 #include "etcd_cdc.h"
@@ -152,7 +151,7 @@ static int match_address(struct nvme_fabrics_config *cfg, nvme_ctrl_t c)
 	return match;
 }			
 	
-static nvme_ctrl_t find_ctrl(struct etcd_cdc_ctx *ctx, nvme_root_t nvme_root,
+static nvme_ctrl_t find_ctrl(struct etcd_cdc_ctx *ctx,
 			     struct nvme_fabrics_config *cfg)
 {
 	nvme_subsystem_t subsys;
@@ -160,7 +159,7 @@ static nvme_ctrl_t find_ctrl(struct etcd_cdc_ctx *ctx, nvme_root_t nvme_root,
 	if (ctx->debug)
 		printf("looking for %s trtype %s traddr=%s trsvcid=%s\n",
 		       cfg->nqn, cfg->transport, cfg->traddr, cfg->trsvcid);
-	nvme_for_each_subsystem(nvme_root, subsys) {
+	nvme_for_each_subsystem(ctx->nvme_root, subsys) {
 		nvme_ctrl_t c;
 
 		nvme_subsystem_for_each_ctrl(subsys, c) {
@@ -194,8 +193,7 @@ static nvme_ctrl_t find_ctrl(struct etcd_cdc_ctx *ctx, nvme_root_t nvme_root,
 	return NULL;
 }
 			
-static void exec_discovery(struct etcd_cdc_ctx *ctx, nvme_root_t root,
-			  char *hostnqn)
+static void exec_discovery(struct etcd_cdc_ctx *ctx, char *hostnqn)
 {
 	struct disc_db_entry *disc_entry;
 
@@ -205,7 +203,7 @@ static void exec_discovery(struct etcd_cdc_ctx *ctx, nvme_root_t root,
 		disc_entry->cfg.hostnqn = hostnqn;
 		disc_entry->cfg.nqn = disc_entry->subsys;
 
-		c = find_ctrl(ctx, root, &disc_entry->cfg);
+		c = find_ctrl(ctx, &disc_entry->cfg);
 		if (c) {
 			if (ctx->debug)
 				printf("Skip existing controller %s\n",
@@ -234,7 +232,6 @@ int main(int argc, char **argv)
 	char c;
 	int getopt_ind;
 	struct etcd_cdc_ctx *ctx;
-	nvme_root_t nvme_root;
 	struct disc_db_entry *disc_entry, *tmp;
 	char *hostnqn;
 	char *prefix = default_prefix;
@@ -250,6 +247,7 @@ int main(int argc, char **argv)
 	ctx->proto = default_proto;
 	ctx->port = 2379;
 	ctx->resp_obj = json_object_new_object();
+	ctx->nvme_root = nvme_scan();
 
 	while ((c = getopt_long(argc, argv, "e:p:h:sv",
 				getopt_arg, &getopt_ind)) != -1) {
@@ -286,14 +284,13 @@ int main(int argc, char **argv)
 	sprintf(ctx->prefix, "%s/%s/", prefix, hostnqn);
 	if (ctx->debug)
 		printf("Using key %s\n", ctx->prefix);
-	nvme_root = nvme_scan();
 
 	ret = etcd_kv_range(ctx, ctx->prefix);
 	if (ret)
 		fprintf(stderr, "Failed to retrieve discovery information\n");
 	else {
 		parse_discovery_response(ctx, ctx->resp_obj);
-		exec_discovery(ctx, nvme_root, hostnqn);
+		exec_discovery(ctx, hostnqn);
 	}
 
 	json_object_put(ctx->resp_obj);
@@ -307,7 +304,7 @@ int main(int argc, char **argv)
 			       json_object_get_string(val_obj));
 	}
 
-	nvme_free_tree(nvme_root);
+	nvme_free_tree(ctx->nvme_root);
 	list_for_each_entry_safe(disc_entry, tmp, &disc_db_list, entry) {
 		list_del_init(&disc_entry->entry);
 		free(disc_entry->subsys);
