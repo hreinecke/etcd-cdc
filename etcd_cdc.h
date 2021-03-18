@@ -23,10 +23,19 @@
 
 #include <libnvme.h>
 
+enum kv_key_op {
+	KV_KEY_OP_ADD,
+	KV_KEY_OP_DELETE,
+	KV_KEY_OP_GET,
+	KV_KEY_OP_RANGE,
+	KV_KEY_OP_WATCH,
+};
+
 struct etcd_cdc_ctx {
 	char *proto;
 	char *host;
 	int port;
+	char *hostnqn;
 	char *configfs;
 	char *prefix;
 	int debug;
@@ -35,14 +44,8 @@ struct etcd_cdc_ctx {
 	struct json_tokener *tokener;
 	struct json_object *resp_obj;
 	nvme_root_t nvme_root;
-};
-
-enum kv_key_op {
-	KV_KEY_OP_ADD,
-	KV_KEY_OP_DELETE,
-	KV_KEY_OP_GET,
-	KV_KEY_OP_RANGE,
-	KV_KEY_OP_WATCH,
+	void (*watch_cb)(struct etcd_cdc_ctx *, enum kv_key_op,
+			 char *, const char *);
 };
 
 int process_inotify_event(struct etcd_cdc_ctx *, char *, int);

@@ -31,6 +31,13 @@ static char *default_host = "localhost";
 static char *default_proto = "http";
 static char *default_prefix = "nvmet";
 
+void print_key(struct etcd_cdc_ctx *ctx, enum kv_key_op op,
+	       char *key, const char *value)
+{
+	printf("%s key %s value %s\n",
+	       op == KV_KEY_OP_ADD ? "add" : "delete", key, value);
+}
+
 int main(int argc, char **argv)
 {
 	struct option getopt_arg[] = {
@@ -160,6 +167,7 @@ int main(int argc, char **argv)
 			exit(1);
 		}
 		ctx->resp_obj = json_object_new_object();
+		ctx->watch_cb = print_key;
 		ret = etcd_kv_watch(ctx, key);
 		json_object_object_foreach(ctx->resp_obj, key_obj, val_obj)
 			printf("%s: %s\n", key_obj,

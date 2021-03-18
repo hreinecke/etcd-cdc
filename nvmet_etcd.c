@@ -503,13 +503,16 @@ etcd_parse_watch_response(char *ptr, size_t size, size_t nmemb, void *arg)
 		key_str = base64_decode(json_object_get_string(key_obj));
 		value_obj = json_object_object_get(kv_obj, "value");
 		if (!value_obj) {
-			if (!strcmp(json_object_get_string(type_obj), "DELETE"))
-				printf("delete key %s\n", key_str);
+			if (!strcmp(json_object_get_string(type_obj),
+				    "DELETE") && ctx->watch_cb)
+				ctx->watch_cb(ctx, KV_KEY_OP_DELETE,
+					      key_str, NULL);
 			free(key_str);
 			continue;
 		}
 		value_str = base64_decode(json_object_get_string(value_obj));
-		printf("watch key %s value %s\n", key_str, value_str);
+		if (ctx->watch_cb)
+			ctx->watch_cb(ctx, KV_KEY_OP_ADD, key_str, value_str);
 		free(value_str);
 		free(key_str);
 	}

@@ -42,79 +42,6 @@ struct disc_db_entry {
 	struct nvme_fabrics_config cfg;
 };
 
-static void parse_discovery_response(struct etcd_cdc_ctx *ctx,
-				     struct json_object *resp_obj)
-{
-	json_object_object_foreach(resp_obj, key, val_obj) {
-		char *key_save, *k, *subsys, *port_id;
-		struct disc_db_entry *disc_entry = NULL, *tmp;
-		char *addr, *a, *addr_save;
-		char *traddr = NULL, *trtype = NULL, *trsvcid = NULL;
-
-		if (strncmp(key, ctx->prefix, strlen(ctx->prefix))) {
-			fprintf(stderr, "Skip invalid prefix '%s'\n", key);
-			continue;
-		}
-		k = strtok_r(key + strlen(ctx->prefix), "/", &key_save);
-		if (!k || !strlen(k)) {
-			fprintf(stderr, "Skip invalid key '%s'\n", key);
-			continue;
-		}
-		subsys = k;
-		k = strtok_r(NULL, "/", &key_save);
-		if (!k || !strlen(k)) {
-			fprintf(stderr, "Skip invalid key '%s'\n", key);
-			continue;
-		}
-		port_id = k;
-		disc_entry = NULL;
-		list_for_each_entry(tmp, &disc_db_list, entry) {
-			if (!strcmp(tmp->subsys, subsys) &&
-			    !strcmp(tmp->port_id, port_id)) {
-				disc_entry = tmp;
-				break;
-			}
-		}
-		if (!disc_entry) {
-			disc_entry = malloc(sizeof(struct disc_db_entry));
-			if (!disc_entry) {
-				fprintf(stderr,
-					"Cannot allocate discovery entry\n");
-				continue;
-			}
-			memset(disc_entry, 0, sizeof(struct disc_db_entry));
-			INIT_LIST_HEAD(&disc_entry->entry);
-			disc_entry->subsys = strdup(subsys);
-			disc_entry->port_id = strdup(port_id);
-			if (ctx->debug)
-				printf("Creating subsys %s port %s\n",
-				       disc_entry->subsys, disc_entry->port_id);
-			list_add(&disc_entry->entry, &disc_db_list);
-		}
-		addr = strdup(json_object_get_string(val_obj));
-		a = strtok_r(addr, ",", &addr_save);
-		while (a && strlen(a)) {
-			if (!strncmp(a, "trtype=", 7))
-				trtype = a + 7;
-			else if (!strncmp(a, "traddr=", 7))
-				traddr = a + 7;
-			else if (!strncmp(a, "trsvcid=", 8))
-				trsvcid = a + 8;
-			a = strtok_r(NULL, ",", &addr_save);
-		}
-		if (!trtype || !traddr) {
-			fprintf(stderr, "invalid entry %s\n",
-				json_object_get_string(val_obj));
-			continue;
-		}
-		disc_entry->cfg.transport = strdup(trtype);
-		disc_entry->cfg.traddr = strdup(traddr);
-		if (trsvcid)
-			disc_entry->cfg.trsvcid = strdup(trsvcid);
-		free(addr);
-	}
-}		
-
 static int match_address(struct nvme_fabrics_config *cfg, nvme_ctrl_t c)
 {
 	char *addr;
@@ -193,30 +120,113 @@ static nvme_ctrl_t find_ctrl(struct etcd_cdc_ctx *ctx,
 	return NULL;
 }
 			
-static void exec_discovery(struct etcd_cdc_ctx *ctx, char *hostnqn)
+static void connect_ctrl(struct etcd_cdc_ctx *ctx,
+			 struct disc_db_entry *disc_entry)
 {
-	struct disc_db_entry *disc_entry;
+	nvme_ctrl_t c;
 
-	list_for_each_entry(disc_entry, &disc_db_list, entry) {
-		nvme_ctrl_t c;
+	disc_entry->cfg.hostnqn = ctx->hostnqn;
+	disc_entry->cfg.nqn = disc_entry->subsys;
 
-		disc_entry->cfg.hostnqn = hostnqn;
-		disc_entry->cfg.nqn = disc_entry->subsys;
-
-		c = find_ctrl(ctx, &disc_entry->cfg);
-		if (c) {
-			if (ctx->debug)
-				printf("Skip existing controller %s\n",
-				       nvme_ctrl_get_name(c));
-			continue;
-		}
-		c = nvmf_add_ctrl(&disc_entry->cfg);
-		if (!c)
-			fprintf(stderr,
-				"Failed to create connection, error %d\n", errno);
-		else
-			printf("Created controller %s\n",
+	c = find_ctrl(ctx, &disc_entry->cfg);
+	if (c) {
+		if (ctx->debug)
+			printf("Skip existing controller %s\n",
 			       nvme_ctrl_get_name(c));
+		return;
+	}
+	c = nvmf_add_ctrl(&disc_entry->cfg);
+	if (!c)
+		fprintf(stderr,
+			"Failed to create connection, error %d\n", errno);
+	else
+		printf("Created controller %s\n",
+		       nvme_ctrl_get_name(c));
+}
+
+static void update_discovery(struct etcd_cdc_ctx *ctx, enum kv_key_op op,
+			     char *key, const char *value)
+{
+	char *key_save, *k, *subsys, *port_id;
+	struct disc_db_entry *disc_entry = NULL, *tmp;
+	char *addr, *a, *addr_save;
+	char *traddr = NULL, *trtype = NULL, *trsvcid = NULL;
+
+	if (op != KV_KEY_OP_ADD) {
+		fprintf(stderr, "Skip unhandled op %d\n", op);
+		return;
+	}
+	if (strncmp(key, ctx->prefix, strlen(ctx->prefix))) {
+		fprintf(stderr, "Skip invalid prefix '%s'\n", key);
+		return;
+	}
+	k = strtok_r(key + strlen(ctx->prefix), "/", &key_save);
+	if (!k || !strlen(k)) {
+		fprintf(stderr, "Skip invalid key '%s'\n", key);
+		return;
+	}
+	subsys = k;
+	k = strtok_r(NULL, "/", &key_save);
+	if (!k || !strlen(k)) {
+		fprintf(stderr, "Skip invalid key '%s'\n", key);
+		return;
+	}
+	port_id = k;
+	disc_entry = NULL;
+	list_for_each_entry(tmp, &disc_db_list, entry) {
+		if (!strcmp(tmp->subsys, subsys) &&
+		    !strcmp(tmp->port_id, port_id)) {
+			disc_entry = tmp;
+			break;
+		}
+	}
+	if (!disc_entry) {
+		disc_entry = malloc(sizeof(struct disc_db_entry));
+		if (!disc_entry) {
+			fprintf(stderr,
+				"Cannot allocate discovery entry\n");
+			return;
+		}
+		memset(disc_entry, 0, sizeof(struct disc_db_entry));
+		INIT_LIST_HEAD(&disc_entry->entry);
+		disc_entry->subsys = strdup(subsys);
+		disc_entry->port_id = strdup(port_id);
+		if (ctx->debug)
+			printf("Creating subsys %s port %s\n",
+			       disc_entry->subsys, disc_entry->port_id);
+		list_add(&disc_entry->entry, &disc_db_list);
+	}
+	addr = strdup(value);
+	a = strtok_r(addr, ",", &addr_save);
+	while (a && strlen(a)) {
+		if (!strncmp(a, "trtype=", 7))
+			trtype = a + 7;
+		else if (!strncmp(a, "traddr=", 7))
+			traddr = a + 7;
+		else if (!strncmp(a, "trsvcid=", 8))
+			trsvcid = a + 8;
+		a = strtok_r(NULL, ",", &addr_save);
+	}
+	if (!trtype || !traddr) {
+		fprintf(stderr, "invalid entry %s\n", value);
+		return;
+	}
+	disc_entry->cfg.transport = strdup(trtype);
+	disc_entry->cfg.traddr = strdup(traddr);
+	if (trsvcid)
+		disc_entry->cfg.trsvcid = strdup(trsvcid);
+	connect_ctrl(ctx, disc_entry);
+	free(addr);
+}
+
+static void parse_discovery_response(struct etcd_cdc_ctx *ctx,
+				     struct json_object *resp_obj)
+{
+	json_object_object_foreach(resp_obj, key, val_obj) {
+		if (!json_object_is_type(val_obj, json_type_string))
+			continue;
+		update_discovery(ctx, KV_KEY_OP_ADD, key,
+				 json_object_get_string(val_obj));
 	}
 }
 
@@ -233,7 +243,6 @@ int main(int argc, char **argv)
 	int getopt_ind;
 	struct etcd_cdc_ctx *ctx;
 	struct disc_db_entry *disc_entry, *tmp;
-	char *hostnqn;
 	char *prefix = default_prefix;
 	int ret = 0;
 
@@ -270,8 +279,8 @@ int main(int argc, char **argv)
 		}
 	}
 
-	hostnqn = nvmf_hostnqn_from_file();
-	if (!hostnqn) {
+	ctx->hostnqn = nvmf_hostnqn_from_file();
+	if (!ctx->hostnqn) {
 		fprintf(stderr, "no host NQN found\n");
 		exit(1);
 	}
@@ -281,21 +290,19 @@ int main(int argc, char **argv)
 		fprintf(stderr, "failed to allocate key\n");
 		exit(1);
 	}
-	sprintf(ctx->prefix, "%s/%s/", prefix, hostnqn);
+	sprintf(ctx->prefix, "%s/%s/", prefix, ctx->hostnqn);
 	if (ctx->debug)
 		printf("Using key %s\n", ctx->prefix);
 
 	ret = etcd_kv_range(ctx, ctx->prefix);
 	if (ret)
 		fprintf(stderr, "Failed to retrieve discovery information\n");
-	else {
+	else
 		parse_discovery_response(ctx, ctx->resp_obj);
-		exec_discovery(ctx, hostnqn);
-	}
 
 	json_object_put(ctx->resp_obj);
 	ctx->resp_obj = json_object_new_object();
-
+	ctx->watch_cb = update_discovery;
 	etcd_kv_watch(ctx, ctx->prefix);
 	if (!ret) {
 		json_object_object_foreach(ctx->resp_obj,
@@ -312,6 +319,7 @@ int main(int argc, char **argv)
 		free(disc_entry);
 	}
 	free(ctx->prefix);
+	free(ctx->hostnqn);
 	free(ctx);
 	return ret < 0 ? 1 : 0;
 }
