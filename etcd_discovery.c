@@ -144,6 +144,35 @@ static void connect_ctrl(struct etcd_cdc_ctx *ctx,
 		       nvme_ctrl_get_name(c));
 }
 
+static void disconnect_ctrl(struct etcd_cdc_ctx *ctx,
+			    struct disc_db_entry *disc_entry)
+{
+	nvme_ctrl_t c;
+	int ret;
+
+	disc_entry->cfg.hostnqn = ctx->hostnqn;
+	disc_entry->cfg.nqn = disc_entry->subsys;
+
+	c = find_ctrl(ctx, &disc_entry->cfg);
+	if (!c) {
+		if (ctx->debug)
+			printf("Skip nonexisting controller\n");
+		goto out_unlink;
+	}
+	ret = nvme_ctrl_disconnect(c);
+	if (ret) {
+		fprintf(stderr, "Failed to delete connection, error %d\n",
+			errno);
+		return;
+	}
+	printf("Deleted controller %s\n", nvme_ctrl_get_name(c));
+	nvme_unlink_ctrl(c);
+	nvme_free_ctrl(c);
+out_unlink:
+	list_del_init(&disc_entry->entry);
+	free(disc_entry);
+}
+
 static void update_discovery(struct etcd_cdc_ctx *ctx, enum kv_key_op op,
 			     char *key, const char *value)
 {
@@ -152,7 +181,7 @@ static void update_discovery(struct etcd_cdc_ctx *ctx, enum kv_key_op op,
 	char *addr, *a, *addr_save;
 	char *traddr = NULL, *trtype = NULL, *trsvcid = NULL;
 
-	if (op != KV_KEY_OP_ADD) {
+	if (op != KV_KEY_OP_ADD && op != KV_KEY_OP_DELETE) {
 		fprintf(stderr, "Skip unhandled op %d\n", op);
 		return;
 	}
@@ -181,6 +210,10 @@ static void update_discovery(struct etcd_cdc_ctx *ctx, enum kv_key_op op,
 		}
 	}
 	if (!disc_entry) {
+		if (op == KV_KEY_OP_DELETE) {
+			fprintf(stderr, "Connection already deleted\n");
+			return;
+		}
 		disc_entry = malloc(sizeof(struct disc_db_entry));
 		if (!disc_entry) {
 			fprintf(stderr,
@@ -196,27 +229,30 @@ static void update_discovery(struct etcd_cdc_ctx *ctx, enum kv_key_op op,
 			       disc_entry->subsys, disc_entry->port_id);
 		list_add(&disc_entry->entry, &disc_db_list);
 	}
-	addr = strdup(value);
-	a = strtok_r(addr, ",", &addr_save);
-	while (a && strlen(a)) {
-		if (!strncmp(a, "trtype=", 7))
-			trtype = a + 7;
-		else if (!strncmp(a, "traddr=", 7))
-			traddr = a + 7;
-		else if (!strncmp(a, "trsvcid=", 8))
-			trsvcid = a + 8;
-		a = strtok_r(NULL, ",", &addr_save);
-	}
-	if (!trtype || !traddr) {
-		fprintf(stderr, "invalid entry %s\n", value);
-		return;
-	}
-	disc_entry->cfg.transport = strdup(trtype);
-	disc_entry->cfg.traddr = strdup(traddr);
-	if (trsvcid)
-		disc_entry->cfg.trsvcid = strdup(trsvcid);
-	connect_ctrl(ctx, disc_entry);
-	free(addr);
+	if (op == KV_KEY_OP_ADD) {
+		addr = strdup(value);
+		a = strtok_r(addr, ",", &addr_save);
+		while (a && strlen(a)) {
+			if (!strncmp(a, "trtype=", 7))
+				trtype = a + 7;
+			else if (!strncmp(a, "traddr=", 7))
+				traddr = a + 7;
+			else if (!strncmp(a, "trsvcid=", 8))
+				trsvcid = a + 8;
+			a = strtok_r(NULL, ",", &addr_save);
+		}
+		if (!trtype || !traddr) {
+			fprintf(stderr, "invalid entry %s\n", value);
+			return;
+		}
+		disc_entry->cfg.transport = strdup(trtype);
+		disc_entry->cfg.traddr = strdup(traddr);
+		if (trsvcid)
+			disc_entry->cfg.trsvcid = strdup(trsvcid);
+		connect_ctrl(ctx, disc_entry);
+		free(addr);
+	} else if (op == KV_KEY_OP_DELETE)
+		disconnect_ctrl(ctx, disc_entry);
 }
 
 static void parse_discovery_response(struct etcd_cdc_ctx *ctx,
