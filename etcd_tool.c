@@ -56,6 +56,7 @@ int main(int argc, char **argv)
 	ctx->host = default_host;
 	ctx->proto = default_proto;
 	ctx->port = 2379;
+	ctx->resp_obj = json_object_new_object();
 	while ((c = getopt_long(argc, argv, "p:h:sv",
 				getopt_arg, &getopt_ind)) != -1) {
 		switch (c) {

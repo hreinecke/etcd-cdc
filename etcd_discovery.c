@@ -244,7 +244,7 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
-	ctx->prefix = malloc(strlen(ctx->prefix) + strlen(hostnqn) + 3);
+	ctx->prefix = malloc(strlen(prefix) + strlen(hostnqn) + 3);
 	if (!ctx->prefix) {
 		fprintf(stderr, "failed to allocate key\n");
 		exit(1);
