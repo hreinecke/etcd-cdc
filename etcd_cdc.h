@@ -21,8 +21,6 @@
 #ifndef _ETCD_CDC_H
 #define _ETCD_CDC_H
 
-#include <libnvme.h>
-
 enum kv_key_op {
 	KV_KEY_OP_ADD,
 	KV_KEY_OP_DELETE,
@@ -44,7 +42,6 @@ struct etcd_cdc_ctx {
 	bool disconnect_ctrls;
 	struct json_tokener *tokener;
 	struct json_object *resp_obj;
-	nvme_root_t nvme_root;
 	void (*watch_cb)(struct etcd_cdc_ctx *, enum kv_key_op,
 			 char *, const char *);
 };

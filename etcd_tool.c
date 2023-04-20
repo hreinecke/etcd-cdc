@@ -22,6 +22,7 @@
 #include <string.h>
 #include <getopt.h>
 #include <stdlib.h>
+#include <stdbool.h>
 
 #include <json-c/json.h>
 
