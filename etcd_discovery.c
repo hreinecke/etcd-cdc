@@ -32,6 +32,7 @@
 static char *default_host = "localhost";
 static char *default_proto = "http";
 static char *default_prefix = "nvmet";
+static int default_port = 2379;
 
 LIST_HEAD(disc_db_list);
 
@@ -251,7 +252,7 @@ static void update_discovery(struct etcd_cdc_ctx *ctx, enum kv_key_op op,
 			disc_entry->cfg.trsvcid = strdup(trsvcid);
 		connect_ctrl(ctx, disc_entry);
 		free(addr);
-	} else if (op == KV_KEY_OP_DELETE)
+	} else if (op == KV_KEY_OP_DELETE && ctx->disconnect_ctrls)
 		disconnect_ctrl(ctx, disc_entry);
 }
 
@@ -266,14 +267,32 @@ static void parse_discovery_response(struct etcd_cdc_ctx *ctx,
 	}
 }
 
+void usage(void) {
+	printf("etcd_discovery - decentralized nvme discovery\n");
+	printf("usage: etcd_discovery <args>\n");
+	printf("Arguments are:\n");
+	printf("\t[-h|--host] <host-or-ip>\tHost to connect to (default: %s)\n",
+	       default_host);
+	printf("\t[-p|--port] <portnum>\tetcd client port (default: %d)\n",
+	       default_port);
+	printf("\t[-k|--key_prefix] <prefix>\tetcd key prefix (default: %s)\n",
+	       default_prefix);
+	printf("\t[-s|--ssl]\tUse SSL connections\n");
+	printf("\t[-d|--disconnect]\tDisconnect NVMe connections when keys are deleted\n");
+	printf("\t[-v|--verbose]\tVerbose output\n");
+	printf("\t[-h|--help]\tThis help text\n");
+}
+
 int main(int argc, char **argv)
 {
 	struct option getopt_arg[] = {
+		{"disconnect", no_argument, 0, 'd'},
 		{"port", required_argument, 0, 'p'},
 		{"host", required_argument, 0, 'h'},
 		{"ssl", no_argument, 0, 's'},
 		{"etcd_prefix", required_argument, 0, 'e'},
 		{"verbose", no_argument, 0, 'v'},
+		{"help", no_argument, 0, '?'},
 	};
 	char c;
 	int getopt_ind;
@@ -290,13 +309,16 @@ int main(int argc, char **argv)
 	memset(ctx, 0, sizeof(struct etcd_cdc_ctx));
 	ctx->host = default_host;
 	ctx->proto = default_proto;
-	ctx->port = 2379;
+	ctx->port = default_port;
 	ctx->resp_obj = json_object_new_object();
 	ctx->nvme_root = nvme_scan();
 
-	while ((c = getopt_long(argc, argv, "e:p:h:sv",
+	while ((c = getopt_long(argc, argv, "ae:p:h:sv?",
 				getopt_arg, &getopt_ind)) != -1) {
 		switch (c) {
+		case 'd':
+			ctx->disconnect_ctrls = true;
+			break;
 		case 'e':
 			prefix = optarg;
 			break;
@@ -312,6 +334,9 @@ int main(int argc, char **argv)
 		case 'v':
 			ctx->debug++;
 			break;
+		case '?':
+			usage();
+			return 0;
 		}
 	}
 

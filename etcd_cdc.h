@@ -41,6 +41,7 @@ struct etcd_cdc_ctx {
 	int debug;
 	int64_t lease;
 	int ttl;
+	bool disconnect_ctrls;
 	struct json_tokener *tokener;
 	struct json_object *resp_obj;
 	nvme_root_t nvme_root;
