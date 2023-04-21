@@ -1,0 +1,5 @@
+nvmet_etcd
+etcd_tool
+etcd_discovery
+*.o
+
