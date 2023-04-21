@@ -1,5 +1,5 @@
 /*
- * nvmet_etcd.c
+ * etcd_client.c
  * etcd v3 REST API implementation
  *
  * Copyright (c) 2021 Hannes Reinecke <hare@suse.de>
