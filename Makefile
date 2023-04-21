@@ -5,7 +5,7 @@ PRG_OBJS = nvmet_etcd.o nvmet_inotify.o etcd_client.o
 TEST_OBJS = etcd_tool.o etcd_client.o
 CFLAGS = -Wall -g -Ilibb64/include
 B64 = libb64/src/libb64.a
-LIBS = $(B64) -ljson-c -lcurl -luuid
+LIBS = -ljson-c -lcurl -luuid
 
 all:	$(PRG) $(TEST)
 
