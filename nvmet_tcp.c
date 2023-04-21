@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include <stdbool.h>
+#include <stddef.h>
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -8,7 +9,6 @@
 #include "types.h"
 #include "nvme.h"
 #include "nvme_tcp.h"
-
 #include "nvmet_common.h"
 #include "nvmet_tcp.h"
 
@@ -577,7 +577,7 @@ int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
 		fprintf(stderr, "ctrl %d qid %d h2c invalid ttag %#x",
 			  ep->ctrl->cntlid, ep->qid, ttag);
 		return tcp_send_c2h_term(ep, NVME_TCP_FES_INVALID_PDU_HDR,
-				offset_of(struct nvme_tcp_data_pdu, ttag),
+				offsetof(struct nvme_tcp_data_pdu, ttag),
 				0, false, pdu, sizeof(struct nvme_tcp_data_pdu));
 	}
 	if (data_offset != qe->iovec_offset) {

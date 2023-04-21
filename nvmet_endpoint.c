@@ -63,7 +63,7 @@ static struct io_uring_sqe *endpoint_submit_poll(struct endpoint *ep,
 
 	sqe = io_uring_get_sqe(&ep->uring);
 	if (!sqe) {
-		print_err("endpoint %d: failed to get poll sqe", ep->qid);
+		fprintf(stderr, "endpoint %d: failed to get poll sqe", ep->qid);
 		return NULL;
 	}
 
@@ -72,8 +72,8 @@ static struct io_uring_sqe *endpoint_submit_poll(struct endpoint *ep,
 
 	ret = io_uring_submit(&ep->uring);
 	if (ret <= 0) {
-		print_err("endpoint %d: submit poll sqe failed, error %d",
-			  ep->qid, ret);
+		fprintf(stderr, "endpoint %d: submit poll sqe failed, error %d",
+			ep->qid, ret);
 		return NULL;
 	}
 	return sqe;
@@ -92,8 +92,8 @@ void *endpoint_thread(void *arg)
 
 	ret = io_uring_queue_init(32, &ep->uring, 0);
 	if (ret) {
-		print_err("endpoint %d: error %d creating uring",
-			  ep->qid, ret);
+		fprintf(stderr, "endpoint %d: error %d creating uring",
+			ep->qid, ret);
 		goto out_disconnect;
 	}
 
@@ -109,8 +109,8 @@ void *endpoint_thread(void *arg)
 
 		ret = io_uring_wait_cqe(&ep->uring, &cqe);
 		if (ret < 0) {
-			print_err("ctrl %d qid %d wait cqe error %d",
-				  ep->ctrl ? ep->ctrl->cntlid : -1,
+			fprintf(stderr, "ctrl %d qid %d wait cqe error %d",
+				ep->ctrl ? ep->ctrl->cntlid : -1,
 				  ep->qid, ret);
 			break;
 		}
@@ -119,16 +119,16 @@ void *endpoint_thread(void *arg)
 		if (cqe_data == pollin_sqe) {
 			ret = cqe->res;
 			if (ret < 0) {
-				print_err("ctrl %d qid %d poll error %d",
-					  ep->ctrl ? ep->ctrl->cntlid : -1,
-					  ep->qid, ret);
+				fprintf(stderr, "ctrl %d qid %d poll error %d",
+					ep->ctrl ? ep->ctrl->cntlid : -1,
+					ep->qid, ret);
 				break;
 			}
 			if (ret & POLLERR) {
 				ret = -ENODATA;
-				print_info("ctrl %d qid %d poll conn closed",
-					   ep->ctrl ? ep->ctrl->cntlid : -1,
-					   ep->qid);
+				printf("ctrl %d qid %d poll conn closed",
+				       ep->ctrl ? ep->ctrl->cntlid : -1,
+				       ep->qid);
 				break;
 			}
 			pollin_sqe = NULL;
@@ -152,9 +152,9 @@ void *endpoint_thread(void *arg)
 		} else {
 			struct ep_qe *qe = cqe_data;
 			if (!qe) {
-				print_err("ctrl %d qid %d empty cqe",
-					  ep->ctrl ? ep->ctrl->cntlid : -1,
-					  ep->qid);
+				fprintf(stderr, "ctrl %d qid %d empty cqe",
+					ep->ctrl ? ep->ctrl->cntlid : -1,
+					ep->qid);
 				ret = -EAGAIN;
 			}
 			ret = handle_data(ep, qe, cqe->res);
@@ -167,15 +167,15 @@ void *endpoint_thread(void *arg)
 		 * is closed; that shouldn't count as an error.
 		 */
 		if (ret == -ENODATA) {
-			print_info("ctrl %d qid %d connection closed",
-				   ep->ctrl ? ep->ctrl->cntlid : -1,
-				   ep->qid);
+			printf("ctrl %d qid %d connection closed",
+			       ep->ctrl ? ep->ctrl->cntlid : -1,
+			       ep->qid);
 			break;
 		}
 		if (ret < 0) {
-			print_err("ctrl %d qid %d error %d retry %d",
-				  ep->ctrl ? ep->ctrl->cntlid : -1,
-				  ep->qid, ret, ep->kato_countdown);
+			fprintf(stderr, "ctrl %d qid %d error %d retry %d",
+				ep->ctrl ? ep->ctrl->cntlid : -1,
+				ep->qid, ret, ep->kato_countdown);
 			break;
 		}
 	}
@@ -184,9 +184,9 @@ void *endpoint_thread(void *arg)
 out_disconnect:
 	disconnect_endpoint(ep, !stopped);
 
-	print_info("ctrl %d qid %d %s",
-		   ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
-		   stopped ? "stopped" : "disconnected");
+	printf("ctrl %d qid %d %s",
+	       ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
+	       stopped ? "stopped" : "disconnected");
 	pthread_exit(NULL);
 
 	return NULL;
@@ -225,7 +225,7 @@ struct endpoint *enqueue_endpoint(int id, struct host_iface *iface)
 
 	ep = malloc(sizeof(struct endpoint));
 	if (!ep) {
-		print_err("no memory");
+		fprintf(stderr, "no memory");
 		close(id);
 		return NULL;
 	}

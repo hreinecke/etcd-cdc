@@ -2,7 +2,7 @@
 PRG = nvmet_etcd
 DISC = nvmet_cdcd
 TEST = etcd_tool
-DISC_OBJS = nvmet_daemon.o nvmet_tcp.o nvmet_endpoint.o
+DISC_OBJS = nvmet_daemon.o nvmet_tcp.o nvmet_cmds.o nvmet_endpoint.o
 PRG_OBJS = nvmet_etcd.o nvmet_inotify.o etcd_client.o
 TEST_OBJS = etcd_tool.o etcd_client.o
 CFLAGS = -Wall -g -Ilibb64/include

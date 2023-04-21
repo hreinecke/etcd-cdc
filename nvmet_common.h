@@ -99,8 +99,6 @@ struct endpoint {
 	int maxr2t;
 	int maxh2cdata;
 	int mdts;
-	gnutls_session_t session;
-	gnutls_psk_server_credentials_t psk_cred;
 };
 
 struct ctrl_conn {

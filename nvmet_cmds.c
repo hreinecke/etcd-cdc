@@ -5,8 +5,7 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 
-#include "common.h"
-#include "nvmet.h"
+#include "nvmet_common.h"
 #include "nvmet_tcp.h"
 
 #define NVME_VER ((1 << 16) | (4 << 8)) /* NVMe 1.4 */
