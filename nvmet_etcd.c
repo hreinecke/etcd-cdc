@@ -1,5 +1,5 @@
 /*
- * etcd_cdc.c
+ * nvmet_etcd.c
  * decentralized NVMe discovery controller
  *
  * Copyright (c) 2021 Hannes Reinecke <hare@suse.de>
@@ -36,7 +36,7 @@
 
 #include <sys/inotify.h>
 
-#include "etcd_cdc.h"
+#include "nvmet_etcd.h"
 
 static char *default_configfs = "/sys/kernel/config/nvmet";
 static char *default_host = "localhost";

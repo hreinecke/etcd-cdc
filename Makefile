@@ -1,7 +1,7 @@
 
-PRG = etcd_cdc
+PRG = nvmet_etcd
 TEST = etcd_tool
-PRG_OBJS = etcd_cdc.o nvmet_inotify.o etcd_client.o
+PRG_OBJS = nvmet_etcd.o nvmet_inotify.o etcd_client.o
 TEST_OBJS = etcd_tool.o etcd_client.o
 CFLAGS = -Wall -g -Ilibb64/include
 B64 = libb64/src/libb64.a
@@ -26,3 +26,5 @@ clean-b64:
 
 clean: clean-b64
 	$(RM) $(TEST_OBJS) $(PRG_OBJS) $(DISC_OBJS) $(PRG) $(TEST) $(DISC)
+
+nvmet_etcd.c: nvmet_etcd.h

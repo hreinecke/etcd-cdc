@@ -1,5 +1,5 @@
 /*
- * nvmet_watcher.h
+ * nvmet_etcd.h
  * decentralized NVMe discovery controller
  *
  * Copyright (c) 2021 Hannes Reinecke <hare@suse.de>
@@ -18,8 +18,8 @@
  *  Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  *
  */
-#ifndef _ETCD_CDC_H
-#define _ETCD_CDC_H
+#ifndef _NVMET_ETCD_H
+#define _NVMET_ETCD_H
 
 enum kv_key_op {
 	KV_KEY_OP_ADD,
@@ -64,4 +64,4 @@ int etcd_lease_revoke(struct etcd_cdc_ctx *ctx);
 extern int inotify_fd;
 extern int debug;
 
-#endif /* _ETCD_CDC_H */
+#endif /* _NVMET_ETCD_H */
