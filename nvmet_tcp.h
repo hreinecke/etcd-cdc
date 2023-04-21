@@ -14,5 +14,6 @@ int tcp_wait_for_connection(struct host_iface *iface);
 int tcp_rma_read(struct endpoint *ep, void *buf, u64 _len);
 int tcp_read_msg(struct endpoint *ep);
 int tcp_handle_msg(struct endpoint *ep);
+int tcp_send_data(struct endpoint *ep, struct ep_qe *qe, u64 data_len);
 
 #endif /* _NVMET_TCP_H */

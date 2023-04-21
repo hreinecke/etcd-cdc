@@ -149,7 +149,7 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 
 	ret = tcp_rma_read(ep, connect, qe->data_len);
 	if (ret) {
-		print_errno("rma_read failed", ret);
+		fprintf(stderr, "rma_read failed with error %d", ret);
 		return ret;
 	}
 
@@ -286,88 +286,10 @@ static int handle_identify_ctrl(struct endpoint *ep, u8 *id_buf, u64 len)
 	return len;
 }
 
-static int handle_identify_ns(struct endpoint *ep, u32 nsid, u8 *id_buf, u64 len)
-{
-	struct nsdev *ns = NULL, *_ns;
-	struct nvme_id_ns id;
-
-	list_for_each_entry(_ns, devices, node) {
-		if (_ns->nsid == nsid) {
-			ns = _ns;
-			break;
-		}
-	}
-	if (!ns)
-		return -ENODEV;
-
-	memset(&id, 0, sizeof(id));
-
-	id.nsze = (u64)ns->size / ns->blksize;
-	id.ncap = id.nsze;
-	id.nlbaf = 1;
-	id.flbas = 0;
-	id.nmic = 1;
-	id.lbaf[0].ds = 12;
-
-	if (len > sizeof(id))
-		len = sizeof(id);
-
-	memcpy(id_buf, &id, len);
-
-	return len;
-}
-
-static int handle_identify_active_ns(struct endpoint *ep, u8 *id_buf, u64 len)
-{
-	struct nsdev *ns;
-	u8 *ns_list = id_buf;
-	int id_len = len;
-
-	memset(ns_list, 0, len);
-	list_for_each_entry(ns, devices, node) {
-		u32 nsid = htole32(ns->nsid);
-		if (len < 4)
-			break;
-		memcpy(ns_list, &nsid, 4);
-		ns_list += 4;
-		len -= 4;
-	}
-	return id_len;
-}
-
-static int handle_identify_ns_desc_list(struct endpoint *ep, u32 nsid, u8 *desc_list, u64 len)
-{
-	struct nsdev *ns = NULL, *_ns;
-	int desc_len = len;
-
-	memset(desc_list, 0, len);
-	list_for_each_entry(_ns, devices, node) {
-		if (_ns->nsid == nsid) {
-			ns = _ns;
-			break;
-		}
-	}
-	if (!ns)
-		return -ENODEV;
-
-	desc_list[0] = 3;
-	desc_list[1] = 0x10;
-	memcpy(&desc_list[2], ns->uuid, 0x10);
-	desc_list += 0x12;
-	len -= 0x12;
-	desc_list[0] = 4;
-	desc_list[1] = 1;
-	desc_list[2] = 0;
-	len -= 3;
-
-	return desc_len;
-}
-
 static int handle_identify(struct endpoint *ep, struct ep_qe *qe,
 			   struct nvme_command *cmd)
 {
 	int cns = cmd->identify.cns;
-	int nsid = le32toh(cmd->identify.nsid);
 	u16 cid = cmd->identify.command_id;
 	int ret, id_len;
 
@@ -377,18 +299,8 @@ static int handle_identify(struct endpoint *ep, struct ep_qe *qe,
 #endif
 
 	switch (cns) {
-	case NVME_ID_CNS_NS:
-		id_len = handle_identify_ns(ep, nsid, qe->data, qe->data_len);
-		break;
 	case NVME_ID_CNS_CTRL:
 		id_len = handle_identify_ctrl(ep, qe->data, qe->data_len);
-		break;
-	case NVME_ID_CNS_NS_ACTIVE_LIST:
-		id_len = handle_identify_active_ns(ep, qe->data, qe->data_len);
-		break;
-	case NVME_ID_CNS_NS_DESC_LIST:
-		id_len = handle_identify_ns_desc_list(ep, nsid,
-						      qe->data, qe->data_len);
 		break;
 	default:
 		print_err("unexpected identify command cns %u", cns);
@@ -399,9 +311,9 @@ static int handle_identify(struct endpoint *ep, struct ep_qe *qe,
 		return NVME_SC_INVALID_NS;
 
 	qe->data_pos = 0;
-	ret = tcp_rma_write(ep, qe, id_len);
+	ret = tcp_send_data(ep, qe, id_len);
 	if (ret)
-		print_errno("rma_write failed", ret);
+		print_errno("tcp_send_data failed", ret);
 	return ret;
 }
 
@@ -511,9 +423,9 @@ static int handle_get_log_page(struct endpoint *ep, struct ep_qe *qe,
 			  cmd->get_log_page.lid);
 		return NVME_SC_INVALID_FIELD;
 	}
-	ret = tcp_data_write(ep, qe, log_len);
+	ret = tcp_send_data(ep, qe, log_len);
 	if (ret)
-		print_errno("rma_write failed", ret);
+		print_errno("tcp_send_data failed", ret);
 
 	return ret;
 }
