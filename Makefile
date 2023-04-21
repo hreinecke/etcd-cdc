@@ -28,3 +28,6 @@ clean: clean-b64
 	$(RM) $(TEST_OBJS) $(PRG_OBJS) $(DISC_OBJS) $(PRG) $(TEST) $(DISC)
 
 nvmet_etcd.c: nvmet_etcd.h
+etcd_tool.c: nvmet_etcd.h
+nvmet_inotiry.c: nvmet_etcd.h list.h
+etcd_client: nvmet_etcd.h

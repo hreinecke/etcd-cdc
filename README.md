@@ -5,7 +5,7 @@ Decentralised NVMe discovery using the etcd key-value store
 etcd-cdc implements a distributed NVMe discovery system, where each storage
 node is part of an etcd cluster. It consists of two parts:
 
-1) etcd_cdc
+1) nvmet_etcd
 Monitors the nvmet configfs via inotify(3) and generates discovery information
 which is stored as keys in etcd.
 
@@ -21,7 +21,7 @@ Utility to exercise the interactions with etcd
 The keys have this format:
 
 ~~~
-nvmet/<hostnqn>/<subsysnqn>/<portid>
+<prefix>/<hostnqn>/<subsysnqn>/<portid>
 ~~~
 
 The value of each key is:
@@ -34,8 +34,11 @@ This makes is particularly easy to generate discovery information, as each
 host just has to fetch all keys with the prefix
 
 ~~~
-nvmet/<hostnqn>
+<prefix>/<hostnqn>
 ~~~
+
+The default `<prefix>` is `nvmet`, it can be changed with the `--etcd-prefix`
+option to `nvmet_etcd`.
 
 ## Lifetime of generated keys
 etcd-cdc will request a lease on startup, and all keys are stored in etcd

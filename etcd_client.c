@@ -30,7 +30,7 @@
 #include "b64/cencode.h"
 #include "b64/cdecode.h"
 
-#include "etcd_cdc.h"
+#include "nvmet_etcd.h"
 
 static char *base64_encode(const char *str, int str_len)
 {

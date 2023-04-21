@@ -26,7 +26,7 @@
 
 #include <json-c/json.h>
 
-#include "etcd_cdc.h"
+#include "nvmet_etcd.h"
 
 static char *default_host = "localhost";
 static char *default_proto = "http";

@@ -35,7 +35,7 @@
 
 #include "list.h"
 
-#include "etcd_cdc.h"
+#include "nvmet_etcd.h"
 
 LIST_HEAD(dir_watcher_list);
 
