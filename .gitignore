@@ -1,4 +1,5 @@
 nvmet_etcd
+nvmet_discd
 etcd_tool
 etcd_discovery
 *.o
