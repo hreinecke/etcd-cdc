@@ -4,35 +4,11 @@
 #include <stdio.h>
 #include <inttypes.h>
 #include <arpa/inet.h>
-#include <sys/poll.h>
+#include <sys/epoll.h>
 
 #include "nvmet_common.h"
 #include "nvmet_endpoint.h"
 #include "nvmet_tcp.h"
-
-void disconnect_endpoint(struct endpoint *ep, int shutdown)
-{
-	struct ctrl_conn *ctrl = ep->ctrl;
-
-	tcp_destroy_endpoint(ep);
-
-	ep->state = DISCONNECTED;
-
-	if (ctrl) {
-		struct subsystem *subsys = ctrl->subsys;
-
-		pthread_mutex_lock(&subsys->ctrl_mutex);
-		ctrl->num_endpoints--;
-		ep->ctrl = NULL;
-		if (!ctrl->num_endpoints) {
-			printf("ctrl %d: deleting controller",
-			       ctrl->cntlid);
-			list_del(&ctrl->node);
-			free(ctrl);
-		}
-		pthread_mutex_unlock(&subsys->ctrl_mutex);
-	}
-}
 
 int endpoint_update_qdepth(struct endpoint *ep, int qsize)
 {
@@ -55,34 +31,11 @@ int endpoint_update_qdepth(struct endpoint *ep, int qsize)
 	return 0;
 }
 
-static struct io_uring_sqe *endpoint_submit_poll(struct endpoint *ep,
-						 int poll_flags)
-{
-	struct io_uring_sqe *sqe;
-	int ret;
-
-	sqe = io_uring_get_sqe(&ep->uring);
-	if (!sqe) {
-		fprintf(stderr, "endpoint %d: failed to get poll sqe", ep->qid);
-		return NULL;
-	}
-
-	io_uring_prep_poll_add(sqe, ep->sockfd, poll_flags);
-	io_uring_sqe_set_data(sqe, sqe);
-
-	ret = io_uring_submit(&ep->uring);
-	if (ret <= 0) {
-		fprintf(stderr, "endpoint %d: submit poll sqe failed, error %d",
-			ep->qid, ret);
-		return NULL;
-	}
-	return sqe;
-}
-
 void *endpoint_thread(void *arg)
 {
 	struct endpoint *ep = arg;
-	struct io_uring_sqe *pollin_sqe = NULL;
+	int epollfd;
+	struct epoll_event ev;
 	sigset_t set;
 	int ret;
 
@@ -90,78 +43,54 @@ void *endpoint_thread(void *arg)
 	sigaddset(&set, SIGPIPE);
 	pthread_sigmask(SIG_BLOCK, &set, NULL);
 
-	ret = io_uring_queue_init(32, &ep->uring, 0);
-	if (ret) {
-		fprintf(stderr, "endpoint %d: error %d creating uring",
-			ep->qid, ret);
+	epollfd = epoll_create(1);
+	if (epollfd < 0) {
+		fprintf(stderr, "endpoint %d: error %d creatint epoll instance",
+			ep->qid, errno);
 		goto out_disconnect;
+	}
+	ev.events = EPOLLIN;
+	ev.data.fd = ep->sockfd;
+	if (epoll_ctl(epollfd, EPOLL_CTL_ADD, ep->sockfd, &ev) < 0) {
+		fprintf(stderr, "endpont %d failed to add epoll fd, error %d",
+			ep->qid, errno);
+		goto out_close;
 	}
 
 	while (!stopped) {
-		struct io_uring_cqe *cqe;
-		void *cqe_data;
+		ret = epoll_wait(epollfd, &ev, 1, ep->kato_interval);
+		if (ret == 0)
+			/* epoll timeout */
+			continue;
 
-		if (!pollin_sqe) {
-			pollin_sqe = endpoint_submit_poll(ep, POLLIN);
-			if (!pollin_sqe)
-				break;
-		}
-
-		ret = io_uring_wait_cqe(&ep->uring, &cqe);
 		if (ret < 0) {
-			fprintf(stderr, "ctrl %d qid %d wait cqe error %d",
+			fprintf(stderr, "ctrl %d qid %d poll error %d",
 				ep->ctrl ? ep->ctrl->cntlid : -1,
-				  ep->qid, ret);
+				ep->qid, ret);
 			break;
 		}
-		io_uring_cqe_seen(&ep->uring, cqe);
-		cqe_data = io_uring_cqe_get_data(cqe);
-		if (cqe_data == pollin_sqe) {
-			ret = cqe->res;
-			if (ret < 0) {
-				fprintf(stderr, "ctrl %d qid %d poll error %d",
-					ep->ctrl ? ep->ctrl->cntlid : -1,
-					ep->qid, ret);
-				break;
-			}
-			if (ret & POLLERR) {
-				ret = -ENODATA;
-				printf("ctrl %d qid %d poll conn closed",
-				       ep->ctrl ? ep->ctrl->cntlid : -1,
-				       ep->qid);
-				break;
-			}
-			pollin_sqe = NULL;
-			if (ep->recv_state == RECV_PDU) {
-				ret = tcp_read_msg(ep);
-			}
-			if (!ret && ep->recv_state == HANDLE_PDU) {
-				ret = tcp_handle_msg(ep);
-				if (!ret) {
-					ep->recv_pdu_len = 0;
-					ep->recv_state = RECV_PDU;
-				}
-			}
-			if (!ret || ret == -EAGAIN) {
-				if (ep->ctrl)
-					ep->kato_countdown = ep->ctrl->kato;
-				else
-					ep->kato_countdown = RETRY_COUNT;
-			}
-
-		} else {
-			struct ep_qe *qe = cqe_data;
-			if (!qe) {
-				fprintf(stderr, "ctrl %d qid %d empty cqe",
-					ep->ctrl ? ep->ctrl->cntlid : -1,
-					ep->qid);
-				ret = -EAGAIN;
-			}
-			ret = handle_data(ep, qe, cqe->res);
+		if (ev.data.fd != ep->sockfd) {
+			fprintf(stderr, "endpoint %d epoll invalid fd",
+				ep->qid);
+			continue;
 		}
-		if (ret == -EAGAIN)
-			if (--ep->kato_countdown > 0)
-				continue;
+		if (ep->recv_state == RECV_PDU) {
+			ret = tcp_read_msg(ep);
+		}
+		if (!ret && ep->recv_state == HANDLE_PDU) {
+			ret = tcp_handle_msg(ep);
+			if (!ret) {
+				ep->recv_pdu_len = 0;
+				ep->recv_state = RECV_PDU;
+			}
+		}
+		if (!ret || ret == -EAGAIN) {
+			if (ep->ctrl)
+				ep->kato_countdown = ep->ctrl->kato;
+			else
+				ep->kato_countdown = RETRY_COUNT;
+		}
+
 		/*
 		 * ->read_msg returns -ENODATA when the connection
 		 * is closed; that shouldn't count as an error.
@@ -179,10 +108,11 @@ void *endpoint_thread(void *arg)
 			break;
 		}
 	}
-	io_uring_queue_exit(&ep->uring);
+out_close:
+	close(epollfd);
 
 out_disconnect:
-	disconnect_endpoint(ep, !stopped);
+	handle_disconnect(ep, !stopped);
 
 	printf("ctrl %d qid %d %s",
 	       ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,

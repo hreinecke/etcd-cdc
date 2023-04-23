@@ -1,8 +1,9 @@
 
 #define _GNU_SOURCE
-#include <pthread.h>
+#include <getopt.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <pthread.h>
 #include <limits.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -15,12 +16,35 @@
 
 LIST_HEAD(iface_linked_list);
 
-char *hostnqn;
+char *discovery_nqn;
 int stopped;
 int debug;
 static int signalled;
 
-static int nvmf_portid = 1;
+static char *default_etcd_host = "localhost";
+static char *default_etcd_proto = "http";
+static char *default_etcd_prefix = "nvmet";
+static int default_etcd_port = 2379;
+
+struct etcd_cdc_ctx *etcd_init(void)
+{
+	struct etcd_cdc_ctx *ctx;
+
+	ctx = malloc(sizeof(struct etcd_cdc_ctx));
+	if (!ctx) {
+		fprintf(stderr, "cannot allocate context\n");
+		return NULL;
+	}
+	memset(ctx, 0, sizeof(struct etcd_cdc_ctx));
+	ctx->host = default_etcd_host;
+	ctx->proto = default_etcd_proto;
+	ctx->prefix = default_etcd_prefix;
+	ctx->port = default_etcd_port;
+	ctx->lease = -1;
+	ctx->ttl = 30;
+
+	return ctx;
+}
 
 static void signal_handler(int sig_num)
 {
@@ -76,7 +100,6 @@ static struct host_iface *new_host_iface(const char *ifaddr,
 		free(iface);
 		return NULL;
 	}
-	iface->portid = nvmf_portid++;
 	iface->port_num = port;
 	if (port == 8009)
 		iface->port_type = (1 << NVME_NQN_CUR);
@@ -92,7 +115,7 @@ static struct host_iface *new_host_iface(const char *ifaddr,
 	return iface;
 }
 
-static int get_iface(const char *ifname)
+static int get_iface(struct etcd_cdc_ctx *ctx, const char *ifname)
 {
 	struct ifaddrs *ifaddrs, *ifa;
 
@@ -127,8 +150,10 @@ static int get_iface(const char *ifname)
 			continue;
 		}
 		iface = new_host_iface(host, ifa->ifa_addr->sa_family, 8009);
-		if (iface)
+		if (iface) {
+			iface->ctx = ctx;
 			list_add_tail(&iface->node, &iface_linked_list);
+		}
         }
 	freeifaddrs(ifaddrs);
 	return 0;
@@ -234,33 +259,45 @@ static void show_help(char *app)
 	printf("  -n - Unique discvoery NQN");
 }
 
-static int parse_args(int argc, char *argv[])
+static int parse_args(struct etcd_cdc_ctx *ctx, int argc, char *argv[])
 {
 	int opt;
 	int run_as_daemon;
 	char *eptr;
-	const char *opt_list = "?dSi:p:";
 	int port_num[16];
 	int port_max = 0, port, idx;
 	int iface_num = 0;
+	struct option getopt_arg[] = {
+		{"discovery_nqn", required_argument, 0, 'd'},
+		{"standalone", no_argument, 0, 'S'},
+		{"interface", required_argument, 0, 'i'},
+		{"prefix", required_argument, 0, 'e'},
+		{"etcd_port", required_argument, 0, 'p'},
+		{"etcd_host", required_argument, 0, 'h'},
+		{"etcd_ssl", no_argument, 0, 's'},
+		{"ttl", required_argument, 0, 't'},
+		{"verbose", no_argument, 0, 'v'},
+	};
+	int getopt_ind;
 
-	if (argc > 1 && strcmp(argv[1], "--help") == 0)
-		goto help;
-
-	hostnqn = NULL;
+	discovery_nqn = NULL;
 	debug = 0;
 	run_as_daemon = 1;
 
-	while ((opt = getopt(argc, argv, opt_list)) != -1) {
+	while ((opt = getopt_long(argc, argv, "d:Si:e:p:h:st:v",
+				  getopt_arg, &getopt_ind)) != -1) {
 		switch (opt) {
 		case 'd':
-			debug = 1;
+			discovery_nqn = optarg;
 			break;
 		case 'S':
 			run_as_daemon = 0;
 			break;
+		case 'e':
+			ctx->prefix = optarg;
+			break;
 		case 'i':
-			if (get_iface(optarg) < 0) {
+			if (get_iface(ctx, optarg) < 0) {
 				fprintf(stderr, "Invalid interface %s\n",
 					optarg);
 				return 1;
@@ -280,19 +317,16 @@ static int parse_args(int argc, char *argv[])
 					optarg);
 				return 1;
 			}
-			for (idx = 0; idx < port_max; idx++) {
-				if (port_num[idx] == port) {
-					port = -1;
-					break;
-				}
-			}
-			if (port > 0) {
-				port_num[idx] = port;
-				port_max++;
-			}
+			ctx->port = port;
 			break;
-		case 'n':
-			hostnqn = optarg;
+		case 's':
+			ctx->proto = "https";
+			break;
+		case 't':
+			ctx->ttl = atoi(optarg);
+			break;
+		case 'v':
+			debug++;
 			break;
 		case '?':
 		default:
@@ -308,7 +342,7 @@ help:
 	}
 
 	if (list_empty(&iface_linked_list)) {
-		if (get_iface("lo") < 0) {
+		if (get_iface(ctx, "lo") < 0) {
 			fprintf(stderr, "Failed to initialize iface 'lo'");
 			return 1;
 		}
@@ -358,11 +392,16 @@ int main(int argc, char *argv[])
 {
 	int ret = 1;
 	struct host_iface *iface;
+	struct etcd_cdc_ctx *ctx;
 
 	signal(SIGINT, signal_handler);
 	signal(SIGTERM, signal_handler);
 
-	ret = parse_args(argc, argv);
+	ctx = etcd_init();
+	if (!ctx)
+		return 1;
+
+	ret = parse_args(ctx, argc, argv);
 	if (ret)
 		return ret;
 

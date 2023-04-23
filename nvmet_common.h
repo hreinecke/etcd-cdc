@@ -23,6 +23,7 @@
 #include "list.h"
 #include "nvme.h"
 #include "nvme_tcp.h"
+#include "etcd_client.h"
 
 extern int			 debug;
 extern char			*hostnqn;
@@ -103,7 +104,6 @@ struct endpoint {
 
 struct ctrl_conn {
 	struct list_head node;
-	struct subsystem *subsys;
 	char nqn[MAX_NQN_SIZE + 1];
 	int cntlid;
 	int ctrl_type;
@@ -128,7 +128,7 @@ struct nsdev {
 struct host_iface {
 	struct list_head node;
 	pthread_t pthread;
-	struct xp_ops *ops;
+	struct etcd_cdc_ctx *ctx;
 	struct list_head ep_list;
 	pthread_mutex_t ep_mutex;
 	char address[41];
@@ -141,14 +141,7 @@ struct host_iface {
 	size_t tls_key_len;
 };
 
-struct subsystem {
-	struct list_head node;
-	struct list_head ctrl_list;
-	pthread_mutex_t ctrl_mutex;
-	char nqn[MAX_NQN_SIZE + 1];
-	int type;
-};
-
+extern char *discovery_nqn;
 extern struct list_head subsys_linked_list;
 extern struct list_head iface_linked_list;
 
@@ -161,9 +154,12 @@ static inline void set_response(struct nvme_completion *resp,
 	resp->status = ((dnr ? NVME_SC_DNR : 0) | status) << 1;
 }
 
+void handle_disconnect(struct endpoint *ep, int shutdown);
 int handle_request(struct endpoint *ep, struct nvme_command *cmd);
 int handle_data(struct endpoint *ep, struct ep_qe *qe, int res);
 void *run_host_interface(void *arg);
 int endpoint_update_qdepth(struct endpoint *ep, int qsize);
+
+u8 *nvmet_etcd_disc_log(struct etcd_cdc_ctx *ctx, char *hostnqn, int *num_rec);
 
 #endif

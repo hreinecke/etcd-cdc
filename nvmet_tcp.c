@@ -329,7 +329,7 @@ int tcp_wait_for_connection(struct host_iface *iface)
 	return ret;
 }
 
-int tcp_rma_read(struct endpoint *ep, void *buf, u64 _len)
+int tcp_recv_data(struct endpoint *ep, void *buf, u64 _len)
 {
 	int len = 0, offset = 0;
 #if 0
@@ -597,7 +597,7 @@ int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu)
 				0, false, pdu, sizeof(struct nvme_tcp_data_pdu));
 	}
 
-	ret = tcp_rma_read(ep, qe->iovec.iov_base, qe->iovec.iov_len);
+	ret = tcp_recv_data(ep, qe->iovec.iov_base, qe->iovec.iov_len);
 	if (ret < 0) {
 		fprintf(stderr, "ctrl %d qid %d h2c data read failed, error %d",
 			  ep->ctrl->cntlid, ep->qid, errno);

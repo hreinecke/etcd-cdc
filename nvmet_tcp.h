@@ -11,7 +11,14 @@ int tcp_init_listener(struct host_iface *iface);
 void tcp_destroy_listener(struct host_iface *iface);
 int tcp_accept_connection(struct endpoint *ep);
 int tcp_wait_for_connection(struct host_iface *iface);
-int tcp_rma_read(struct endpoint *ep, void *buf, u64 _len);
+int tcp_recv_data(struct endpoint *ep, void *buf, u64 _len);
+int tcp_send_c2h_data(struct endpoint *ep, struct ep_qe *qe);
+int tcp_send_r2t(struct endpoint *ep, u16 tag);
+int tcp_send_c2h_term(struct endpoint *ep, u16 fes, u8 pdu_offset,
+		      u8 parm_offset, bool hdr_digest,
+		      union nvme_tcp_pdu *pdu, int pdu_len);
+int tcp_send_rsp(struct endpoint *ep, struct nvme_completion *comp);
+int tcp_handle_h2c_data(struct endpoint *ep, union nvme_tcp_pdu *pdu);
 int tcp_read_msg(struct endpoint *ep);
 int tcp_handle_msg(struct endpoint *ep);
 int tcp_send_data(struct endpoint *ep, struct ep_qe *qe, u64 data_len);
