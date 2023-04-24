@@ -12,6 +12,7 @@ static int parse_discovery_response(char *prefix, char *hostnqn,
 	char *key_parse, *key_save, *k, *eptr;
 	char *addr, *a, *addr_save;
 	char *traddr = NULL, *trtype = NULL, *trsvcid = NULL;
+	int traddr_len;
 	unsigned char port;
 
 	printf("Parsing key %s\n", key);
@@ -95,9 +96,18 @@ static int parse_discovery_response(char *prefix, char *hostnqn,
 		fprintf(stderr, "invalid trtype %s\n", trtype);
 		return 0;
 	}
-	memcpy(entry->traddr, traddr, NVMF_NQN_FIELD_LEN);
-	if (trsvcid)
-		memcpy(entry->trsvcid, trsvcid, NVMF_TRSVCID_SIZE);
+	memset(entry->traddr, 0, NVMF_NQN_FIELD_LEN);
+	traddr_len = strlen(traddr);
+	if (traddr_len > NVMF_NQN_FIELD_LEN)
+		traddr_len = NVMF_NQN_FIELD_LEN;
+	memcpy(entry->traddr, traddr, traddr_len);
+	if (trsvcid) {
+		int trsvcid_len = strlen(trsvcid);
+
+		if (trsvcid_len > NVMF_TRSVCID_SIZE)
+			trsvcid_len = NVMF_TRSVCID_SIZE;
+		memcpy(entry->trsvcid, trsvcid, trsvcid_len);
+	}
 	free(addr);
 	return 1;
 }
@@ -140,7 +150,8 @@ u8 *nvmet_etcd_disc_log(struct etcd_cdc_ctx *ctx, char *hostnqn, int *num_rec)
 					JSON_C_TO_STRING_PRETTY));
 	num_recs = calc_num_recs(ctx->resp_obj);
 	printf("Found %u records\n", num_recs);
-	log_len = sizeof(hdr) + (num_recs * sizeof(entry));
+	log_len = sizeof(struct nvmf_disc_rsp_page_hdr) +
+		(num_recs * sizeof(entry));
 	log_buf = malloc(log_len);
 	memset(log_buf, 0, log_len);
 	hdr = (struct nvmf_disc_rsp_page_hdr *)log_buf;
@@ -148,7 +159,7 @@ u8 *nvmet_etcd_disc_log(struct etcd_cdc_ctx *ctx, char *hostnqn, int *num_rec)
 	hdr->genctr = nvmf_discovery_genctr++;
 
 	log_ptr = log_buf;
-	log_ptr += sizeof(*hdr);
+	log_ptr += sizeof(struct nvmf_disc_rsp_page_hdr);
 
 	json_object_object_foreach(ctx->resp_obj, key, val_obj) {
 		if (!json_object_is_type(val_obj, json_type_string))
