@@ -375,8 +375,8 @@ int tcp_send_c2h_data(struct endpoint *ep, struct ep_qe *qe)
 	struct nvme_tcp_data_pdu *pdu = &ep->send_pdu->data;
 
 	ctrl_info(ep, "c2h data cid %x offset %llu len %lu/%llu",
-	       qe->ccid, qe->data_pos, qe->iovec.iov_len,
-	       qe->data_remaining);
+		  qe->ccid, qe->data_pos, qe->iovec.iov_len,
+		  qe->data_remaining);
 
 	if (!qe->data_remaining) {
 		ctrl_err(ep, "Nothing to send, %lu bytes left",

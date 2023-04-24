@@ -5,7 +5,7 @@
 
 static int nvmf_discovery_genctr = 2;
 
-static int parse_discovery_response(char *prefix, char *hostnqn,
+static int parse_etcd_kv(char *prefix, char *hostnqn,
 		struct nvmf_disc_rsp_page_entry *entry,
 		char *key, const char *value)
 {
@@ -22,31 +22,31 @@ static int parse_discovery_response(char *prefix, char *hostnqn,
 	if (!k || !strlen(k)) {
 		fprintf(stderr, "parse error (prefix) on key '%s'\n", key);
 		free(key_parse);
-		return 0;
+		return -EINVAL;
 	}
 	if (strncmp(k, prefix, strlen(prefix))) {
 		fprintf(stderr, "Skip invalid prefix '%s'\n", k);
 		free(key_parse);
-		return 0;
+		return -EINVAL;
 	}
 	k = strtok_r(NULL, "/", &key_save);
 	if (!k) {
 		fprintf(stderr, "parse error (hostnqn) on key '%s'\n", key);
 		free(key_parse);
-		return 0;
+		return -EINVAL;
 	}
 #if 0
 	if (strlen(k) && strcmp(hostnqn, k)) {
 		fprintf(stderr, "Skip invalid hostnqn host '%s'\n", k);
 		free(key_parse);
-		return 0;
+		return -EINVAL;
 	}
 #endif
 	k = strtok_r(NULL, "/", &key_save);
 	if (!k || !strlen(k)) {
 		fprintf(stderr, "parse error (subnqn) on key '%s'\n", key);
 		free(key_parse);
-		return 0;
+		return -EINVAL;
 	}
 	memset(entry, 0, sizeof(*entry));
 	strncpy(entry->subnqn, k, NVMF_NQN_FIELD_LEN);
@@ -54,13 +54,13 @@ static int parse_discovery_response(char *prefix, char *hostnqn,
 	if (!k || !strlen(k)) {
 		fprintf(stderr, "parse error (port) on key '%s'\n", key);
 		free(key_parse);
-		return 0;
+		return -EINVAL;
 	}
 	port = strtoul(k, &eptr, 10);
 	if (eptr == k) {
 		fprintf(stderr, "Skip invalid portid '%s'\n", k);
 		free(key_parse);
-		return 0;
+		return -EINVAL;
 	}
 	entry->portid = port;
 	entry->cntlid = htole16(NVME_CNTLID_DYNAMIC);
@@ -81,7 +81,7 @@ static int parse_discovery_response(char *prefix, char *hostnqn,
 	}
 	if (!trtype || !traddr) {
 		fprintf(stderr, "invalid entry %s\n", value);
-		return 0;
+		return -EINVAL;
 	}
 	entry->adrfam = NVMF_ADDR_FAMILY_IP4;
 	if (!strcmp(trtype, "tcp")) {
@@ -94,7 +94,7 @@ static int parse_discovery_response(char *prefix, char *hostnqn,
 		entry->trtype = NVMF_TRTYPE_LOOP;
 	} else {
 		fprintf(stderr, "invalid trtype %s\n", trtype);
-		return 0;
+		return -EINVAL;
 	}
 	memset(entry->traddr, 0, NVMF_NQN_FIELD_LEN);
 	traddr_len = strlen(traddr);
@@ -109,7 +109,7 @@ static int parse_discovery_response(char *prefix, char *hostnqn,
 		memcpy(entry->trsvcid, trsvcid, trsvcid_len);
 	}
 	free(addr);
-	return 1;
+	return 0;
 }
 
 static int calc_num_recs(struct json_object *obj)
@@ -127,7 +127,7 @@ static int calc_num_recs(struct json_object *obj)
 	return numrec;
 }
 
-u8 *nvmet_etcd_disc_log(struct etcd_cdc_ctx *ctx, char *hostnqn, int *num_rec)
+u8 *nvmet_etcd_disc_log(struct etcd_cdc_ctx *ctx, char *hostnqn, size_t *len)
 {
 	int ret, num_recs = 0;
 	struct nvmf_disc_rsp_page_hdr *hdr;
@@ -155,26 +155,30 @@ u8 *nvmet_etcd_disc_log(struct etcd_cdc_ctx *ctx, char *hostnqn, int *num_rec)
 	log_buf = malloc(log_len);
 	memset(log_buf, 0, log_len);
 	hdr = (struct nvmf_disc_rsp_page_hdr *)log_buf;
-	hdr->recfmt = 0;
-	hdr->genctr = nvmf_discovery_genctr++;
+	hdr->recfmt = 1;
+	hdr->genctr = htole64(nvmf_discovery_genctr);
 
 	log_ptr = log_buf;
 	log_ptr += sizeof(struct nvmf_disc_rsp_page_hdr);
+	log_len = sizeof(struct nvmf_disc_rsp_page_hdr);
 
+	num_recs = 0;
 	json_object_object_foreach(ctx->resp_obj, key, val_obj) {
 		if (!json_object_is_type(val_obj, json_type_string))
 			continue;
 		memset(&entry, 0, sizeof(entry));
-		if (!parse_discovery_response(ctx->prefix, hostnqn,
-					      &entry, key,
-					      json_object_get_string(val_obj)))
+		if (parse_etcd_kv(ctx->prefix, hostnqn,
+				  &entry, key,
+				  json_object_get_string(val_obj)) < 0)
 			continue;
 		num_recs++;
 		memcpy(log_ptr, &entry, sizeof(entry));
 		log_ptr += sizeof(entry);
+		log_len += sizeof(entry);
 	}
+
 	ctx->resp_obj = NULL;
-	hdr->numrec = num_recs;
-	*num_rec = num_recs;
+	hdr->numrec = htole64(num_recs);
+	*len = log_len;
 	return log_buf;
 }

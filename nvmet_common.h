@@ -189,6 +189,6 @@ int handle_data(struct endpoint *ep, struct ep_qe *qe, int res);
 void *run_host_interface(void *arg);
 int endpoint_update_qdepth(struct endpoint *ep, int qsize);
 
-u8 *nvmet_etcd_disc_log(struct etcd_cdc_ctx *ctx, char *hostnqn, int *num_rec);
+u8 *nvmet_etcd_disc_log(struct etcd_cdc_ctx *ctx, char *hostnqn, size_t *len);
 
 #endif

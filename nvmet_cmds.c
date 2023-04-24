@@ -325,8 +325,8 @@ static int format_disc_log(void *data, u64 data_offset,
 		return 0;
 	}
 	memcpy(data, (u8 *)log_buf + data_offset, log_len);
-	ctrl_info(ep, "Returning discovery log page offset %llu len %llu",
-		  data_offset, data_len);
+	ctrl_info(ep, "Returning discovery log page offset %llu len %u",
+		  data_offset, log_len);
 	free(log_buf);
 	return data_len;
 }

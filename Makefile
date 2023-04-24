@@ -5,7 +5,7 @@ TEST = etcd_tool
 DISC_OBJS = nvmet_daemon.o nvmet_tcp.o nvmet_cmds.o nvmet_endpoint.o nvmet_discovery.o etcd_client.o
 PRG_OBJS = nvmet_etcd.o nvmet_inotify.o etcd_client.o
 TEST_OBJS = etcd_tool.o etcd_client.o
-CFLAGS = -Wall -g -Ilibb64/include
+CFLAGS = -Wall -g
 B64 = base64.o
 LIBS = -ljson-c -lcurl -luuid
 
@@ -25,10 +25,7 @@ $(TEST): $(TEST_OBJS) $(B64)
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $?
 
-clean-b64:
-	(cd libb64; make clean)
-
-clean: clean-b64
+clean:
 	$(RM) $(TEST_OBJS) $(PRG_OBJS) $(DISC_OBJS) $(PRG) $(TEST) $(DISC)
 
 nvmet_etcd.c: nvmet_etcd.h
