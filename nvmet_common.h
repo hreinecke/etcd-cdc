@@ -82,6 +82,7 @@ enum { RECV_PDU, RECV_DATA, HANDLE_PDU };
 struct endpoint {
 	struct list_head node;
 	pthread_t pthread;
+	struct etcd_cdc_ctx *ctx;
 	struct host_iface *iface;
 	struct ctrl_conn *ctrl;
 	struct ep_qe *qes;

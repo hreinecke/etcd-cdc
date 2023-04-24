@@ -313,7 +313,7 @@ static int format_disc_log(void *data, u64 data_offset,
 	u8 *log_buf;
 	int log_len = data_len;
 
-	log_buf = nvmet_etcd_disc_log(ep->iface->ctx, ep->ctrl->nqn, &log_len);
+	log_buf = nvmet_etcd_disc_log(ep->ctx, ep->ctrl->nqn, &log_len);
 	if (log_len > data_len)
 		log_len = data_len;
 	memcpy(data, (u8 *)log_buf + data_offset, log_len);

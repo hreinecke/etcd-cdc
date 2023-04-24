@@ -3,7 +3,7 @@
 
 void *endpoint_thread(void *arg);
 struct endpoint *enqueue_endpoint(int id, struct host_iface *iface);
-void disconnect_endpoint(struct endpoint *ep, int shutdown);
+void dequeue_endpoint(struct endpoint *ep);
 
 #endif /* _NVMET_ENDPOINT_H */
 

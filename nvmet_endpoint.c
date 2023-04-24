@@ -158,6 +158,7 @@ struct endpoint *enqueue_endpoint(int id, struct host_iface *iface)
 	ep->maxh2cdata = 0x10000;
 	ep->qid = -1;
 	ep->recv_state = RECV_PDU;
+	ep->ctx = etcd_dup(iface->ctx);
 
 	ret = run_endpoint(ep, id);
 	if (ret) {
@@ -170,7 +171,18 @@ struct endpoint *enqueue_endpoint(int id, struct host_iface *iface)
 	pthread_mutex_unlock(&iface->ep_mutex);
 	return ep;
 out:
+	etcd_exit(ep->ctx);
 	free(ep);
 	close(id);
 	return NULL;
+}
+
+void dequeue_endpoint(struct endpoint *ep)
+{
+	if (ep->pthread) {
+		pthread_join(ep->pthread, NULL);
+	}
+	list_del(&ep->node);
+	etcd_exit(ep->ctx);
+	free(ep);
 }

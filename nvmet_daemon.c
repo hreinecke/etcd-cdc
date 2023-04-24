@@ -185,13 +185,8 @@ void *run_host_interface(void *arg)
 
 	tcp_destroy_listener(iface);
 	pthread_mutex_lock(&iface->ep_mutex);
-	list_for_each_entry_safe(ep, _ep, &iface->ep_list, node) {
-		if (ep->pthread) {
-			pthread_join(ep->pthread, NULL);
-		}
-		list_del(&ep->node);
-		free(ep);
-	}
+	list_for_each_entry_safe(ep, _ep, &iface->ep_list, node)
+		dequeue_endpoint(ep);
 	pthread_mutex_unlock(&iface->ep_mutex);
 	pthread_exit(NULL);
 	return NULL;
