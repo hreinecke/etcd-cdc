@@ -17,7 +17,6 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <uuid/uuid.h>
-#include <liburing.h>
 
 #include "types.h"
 #include "list.h"
