@@ -27,8 +27,7 @@
 #include <curl/easy.h>
 #include <json-c/json.h>
 
-#include "b64/cencode.h"
-#include "b64/cdecode.h"
+#include "base64.h"
 
 #include "nvmet_etcd.h"
 
@@ -37,44 +36,26 @@ static char *default_etcd_proto = "http";
 static char *default_etcd_prefix = "nvmet";
 static int default_etcd_port = 2379;
 
-static char *base64_encode(const char *str, int str_len)
+static char *__b64enc(const char *str, int str_len)
 {
 	int encoded_size = str_len * 2;
-	base64_encodestate state;
-	char *encoded_str = malloc(encoded_size), *p;
-	int len;
+	char *encoded_str = malloc(encoded_size);
 
 	if (!encoded_str)
 		return NULL;
-	base64_init_encodestate(&state);
-	p = encoded_str;
-	len = base64_encode_block(str, str_len, p, &state);
-	p += len;
-	len = base64_encode_blockend(p, &state);
-	p += len;
-	*p = '\0';
-	p--;
-	if (*p == '\n')
-	    *p = '\0';
+	base64_encode((unsigned char *)str, str_len, encoded_str);
 	return encoded_str;
 }
 
-static char *base64_decode(const char *encoded_str)
+static char *__b64dec(const char *encoded_str)
 {
-	base64_decodestate state;
-	char *str = malloc(strlen(encoded_str)), *p;
-	int len;
+	int encoded_size = strlen(encoded_str);
+	char *str = malloc(encoded_size);
 
 	if (!str)
 		return NULL;
 
-	base64_init_decodestate(&state);
-	p = str;
-	len = base64_decode_block(encoded_str, strlen(encoded_str),
-				  p, &state);
-	p += len;
-	*p = '\0';
-
+	base64_decode(encoded_str, encoded_size, (unsigned char *)str);
 	return str;
 }
 
@@ -171,8 +152,8 @@ etcd_parse_range_response (char *ptr, size_t size, size_t nmemb, void *arg)
 		value_obj = json_object_object_get(kv_obj, "value");
 		if (!value_obj)
 			continue;
-		key_str = base64_decode(json_object_get_string(key_obj));
-		value_str = base64_decode(json_object_get_string(value_obj));
+		key_str = __b64dec(json_object_get_string(key_obj));
+		value_str = __b64dec(json_object_get_string(value_obj));
 		json_object_object_add(ctx->resp_obj, key_str,
 				       json_object_new_string(value_str));
 	}
@@ -306,10 +287,10 @@ int etcd_kv_put(struct etcd_cdc_ctx *ctx, char *key, char *value)
 		ctx->proto, ctx->host, ctx->port);
 
 	post_obj = json_object_new_object();
-	encoded_key = base64_encode(key, strlen(key));
+	encoded_key = __b64enc(key, strlen(key));
 	json_object_object_add(post_obj, "key",
 			       json_object_new_string(encoded_key));
-	encoded_value = base64_encode(value, strlen(value));
+	encoded_value = __b64enc(value, strlen(value));
 	json_object_object_add(post_obj, "value",
 			       json_object_new_string(encoded_value));
 	json_object_object_add(post_obj, "lease",
@@ -350,7 +331,7 @@ int etcd_kv_get(struct etcd_cdc_ctx *ctx, char *key)
 
 	ctx->tokener = json_tokener_new_ex(5);
 	post_obj = json_object_new_object();
-	encoded_key = base64_encode(key, strlen(key));
+	encoded_key = __b64enc(key, strlen(key));
 	json_object_object_add(post_obj, "key",
 			       json_object_new_string(encoded_key));
 
@@ -391,10 +372,10 @@ int etcd_kv_range(struct etcd_cdc_ctx *ctx, char *key)
 
 	ctx->tokener = json_tokener_new_ex(5);
 	post_obj = json_object_new_object();
-	encoded_key = base64_encode(key, strlen(key));
+	encoded_key = __b64enc(key, strlen(key));
 	json_object_object_add(post_obj, "key",
 			       json_object_new_string(encoded_key));
-	encoded_range = base64_encode("\0", 1);
+	encoded_range = __b64enc("\0", 1);
 	json_object_object_add(post_obj, "range_end",
 			       json_object_new_string(encoded_range));
 
@@ -475,7 +456,7 @@ int etcd_kv_delete(struct etcd_cdc_ctx *ctx, char *key)
 		ctx->proto, ctx->host, ctx->port);
 
 	post_obj = json_object_new_object();
-	encoded_key = base64_encode(key, strlen(key));
+	encoded_key = __b64enc(key, strlen(key));
 	json_object_object_add(post_obj, "key",
 			       json_object_new_string(encoded_key));
 
@@ -556,7 +537,7 @@ etcd_parse_watch_response(char *ptr, size_t size, size_t nmemb, void *arg)
 		key_obj = json_object_object_get(kv_obj, "key");
 		if (!key_obj)
 			continue;
-		key_str = base64_decode(json_object_get_string(key_obj));
+		key_str = __b64dec(json_object_get_string(key_obj));
 		value_obj = json_object_object_get(kv_obj, "value");
 		if (!value_obj) {
 			if (!strcmp(json_object_get_string(type_obj),
@@ -566,7 +547,7 @@ etcd_parse_watch_response(char *ptr, size_t size, size_t nmemb, void *arg)
 			free(key_str);
 			continue;
 		}
-		value_str = base64_decode(json_object_get_string(value_obj));
+		value_str = __b64dec(json_object_get_string(value_obj));
 		if (ctx->watch_cb)
 			ctx->watch_cb(ctx, KV_KEY_OP_ADD, key_str, value_str);
 		free(value_str);
@@ -591,10 +572,10 @@ int etcd_kv_watch(struct etcd_cdc_ctx *ctx, char *key)
 	ctx->tokener = json_tokener_new_ex(10);
 	post_obj = json_object_new_object();
 	req_obj = json_object_new_object();
-	encoded_key = base64_encode(key, strlen(key));
+	encoded_key = __b64enc(key, strlen(key));
 	json_object_object_add(req_obj, "key",
 			       json_object_new_string(encoded_key));
-	encoded_range = base64_encode("\0", 1);
+	encoded_range = __b64enc("\0", 1);
 	json_object_object_add(req_obj, "range_end",
 			       json_object_new_string(encoded_range));
 	json_object_object_add(post_obj, "create_request", req_obj);

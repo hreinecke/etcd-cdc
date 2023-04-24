@@ -6,13 +6,12 @@ DISC_OBJS = nvmet_daemon.o nvmet_tcp.o nvmet_cmds.o nvmet_endpoint.o nvmet_disco
 PRG_OBJS = nvmet_etcd.o nvmet_inotify.o etcd_client.o
 TEST_OBJS = etcd_tool.o etcd_client.o
 CFLAGS = -Wall -g -Ilibb64/include
-B64 = libb64/src/libb64.a
+B64 = base64.o
 LIBS = -ljson-c -lcurl -luuid
 
 all:	$(PRG) $(DISC) $(TEST)
 
-$(B64):
-	(cd libb64; make)
+$(B64): base64.c
 
 $(PRG): $(PRG_OBJS) $(B64)
 	$(CC) $(CFLAGS) -o $(PRG) $^ $(LIBS)
