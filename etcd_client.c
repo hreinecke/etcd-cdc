@@ -38,24 +38,28 @@ static int default_etcd_port = 2379;
 
 static char *__b64enc(const char *str, int str_len)
 {
-	int encoded_size = str_len * 2;
-	char *encoded_str = malloc(encoded_size);
+	int encoded_size = (str_len * 2) + 2, len;
+	char *encoded_str = malloc(encoded_size + 1);
 
 	if (!encoded_str)
 		return NULL;
-	base64_encode((unsigned char *)str, str_len, encoded_str);
+	memset(encoded_str, 0, encoded_size);
+	len = base64_encode((unsigned char *)str, str_len, encoded_str);
+	encoded_str[len] = '\0';
 	return encoded_str;
 }
 
 static char *__b64dec(const char *encoded_str)
 {
-	int encoded_size = strlen(encoded_str);
-	char *str = malloc(encoded_size);
+	int encoded_size = strlen(encoded_str), len;
+	char *str = malloc(encoded_size + 1);
 
 	if (!str)
 		return NULL;
 
-	base64_decode(encoded_str, encoded_size, (unsigned char *)str);
+	memset(str, 0, encoded_size);
+	len = base64_decode(encoded_str, encoded_size, (unsigned char *)str);
+	str[len] = '\0';
 	return str;
 }
 
@@ -96,6 +100,7 @@ struct etcd_cdc_ctx *etcd_dup(struct etcd_cdc_ctx *ctx)
 	new_ctx->port = ctx->port;
 	new_ctx->lease = -1;
 	new_ctx->ttl = ctx->ttl;
+	new_ctx->debug = ctx->debug;
 	new_ctx->resp_obj = json_object_new_object();
 
 	return new_ctx;
@@ -123,6 +128,9 @@ etcd_parse_range_response (char *ptr, size_t size, size_t nmemb, void *arg)
 			/* Partial / chunked response; continue */
 			return size * nmemb;
 		}
+		if (ctx->debug)
+			printf("ERROR:\n%s\n", ptr);
+
 		json_object_object_add(ctx->resp_obj, "error",
 				       json_object_new_string(ptr));
 		json_object_object_add(ctx->resp_obj, "errno",
@@ -130,7 +138,7 @@ etcd_parse_range_response (char *ptr, size_t size, size_t nmemb, void *arg)
 		return 0;
 	}
 	if (ctx->debug)
-		printf("%s\n", json_object_to_json_string_ext(etcd_resp,
+		printf("DATA:\n%s\n", json_object_to_json_string_ext(etcd_resp,
 					JSON_C_TO_STRING_PRETTY));
 	kvs_obj = json_object_object_get(etcd_resp, "kvs");
 	if (!kvs_obj) {
@@ -226,6 +234,10 @@ int etcd_kv_exec(struct etcd_cdc_ctx *ctx, char *url,
 		errno = EINVAL;
 		goto err_out;
 	}
+
+	if (ctx->debug)
+		printf("POST:\n%s\n", json_object_to_json_string_ext(post_obj,
+					JSON_C_TO_STRING_PRETTY));
 
 	post_data = json_object_to_json_string(post_obj);
 	err = curl_easy_setopt(curl, CURLOPT_POSTFIELDS, post_data);
