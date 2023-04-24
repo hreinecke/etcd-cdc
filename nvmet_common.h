@@ -154,6 +154,22 @@ static inline void set_response(struct nvme_completion *resp,
 	resp->status = ((dnr ? NVME_SC_DNR : 0) | status) << 1;
 }
 
+#define ctrl_info(e, f, x...)					\
+	do {							\
+		printf("ctrl %d qid %d: " f "\n",		\
+		       (e)->ctrl ? (e)->ctrl->cntlid : -1,	\
+		       (e)->qid, ##x);				\
+		fflush(stdout);					\
+	} while (0)
+
+#define ctrl_err(e, f, x...)					\
+	do {							\
+		printf("ctrl %d qid %d: " f "\n",		\
+		       (e)->ctrl->cntlid, (e)->qid, ##x);	\
+		fflush(stdout);					\
+	} while (0)
+
+
 void handle_disconnect(struct endpoint *ep, int shutdown);
 int handle_request(struct endpoint *ep, struct nvme_command *cmd);
 int handle_data(struct endpoint *ep, struct ep_qe *qe, int res);

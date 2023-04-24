@@ -3,6 +3,8 @@
 #include "nvmet_common.h"
 #include "nvmet_tcp.h"
 
+static int nvmf_discovery_genctr = 1;
+
 static int parse_discovery_response(char *prefix, char *hostnqn,
 		struct nvmf_disc_rsp_page_entry *entry,
 		char *key, const char *value)
@@ -121,6 +123,7 @@ u8 *nvmet_etcd_disc_log(struct etcd_cdc_ctx *ctx, char *hostnqn, int *num_rec)
 	}
 	hdr.recfmt = 0;
 	hdr.numrec = calc_num_recs(ctx->resp_obj);
+	hdr.genctr = nvmf_discovery_genctr++;
 	printf("Found %llu DLPEs", hdr.numrec);
 
 	log_len = sizeof(hdr) + hdr.numrec * sizeof(entry);

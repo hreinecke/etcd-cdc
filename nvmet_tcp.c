@@ -162,7 +162,7 @@ int tcp_init_listener(struct host_iface *iface)
 
 	listenfd = socket(iface->adrfam, SOCK_STREAM|SOCK_NONBLOCK, 0);
 	if (listenfd < 0) {
-		fprintf(stderr, "iface %d: socket error %d",
+		fprintf(stderr, "iface %d: socket error %d\n",
 			  iface->portid, errno);
 		return -errno;
 	}
@@ -175,7 +175,7 @@ int tcp_init_listener(struct host_iface *iface)
 
 		ret = bind(listenfd, (struct sockaddr *) &addr, sizeof(addr));
 		if (ret < 0) {
-			fprintf(stderr, "iface %d: socket bind error %d",
+			fprintf(stderr, "iface %d: socket bind error %d\n",
 				  iface->portid, errno);
 			ret = -errno;
 			goto err;
@@ -188,7 +188,7 @@ int tcp_init_listener(struct host_iface *iface)
 
 		ret = bind(listenfd, (struct sockaddr *) &addr6, sizeof(addr6));
 		if (ret < 0) {
-			fprintf(stderr, "iface %d: socket bind error %d",
+			fprintf(stderr, "iface %d: socket bind error %d\n",
 				  iface->portid, errno);
 			ret = -errno;
 			goto err;
@@ -197,7 +197,7 @@ int tcp_init_listener(struct host_iface *iface)
 
 	ret = listen(listenfd, BACKLOG);
 	if (ret < 0) {
-		fprintf(stderr, "iface %d: socket listen error %d",
+		fprintf(stderr, "iface %d: socket listen error %d\n",
 			  iface->portid, errno);
 		ret = -errno;
 		goto err;
@@ -318,7 +318,7 @@ int tcp_wait_for_connection(struct host_iface *iface)
 				NULL);
 		if (sockfd < 0) {
 			if (errno != EAGAIN)
-				fprintf(stderr, "failed to accept error %d",
+				fprintf(stderr, "failed to accept error %d\n",
 					errno);
 			return -EAGAIN;
 		}

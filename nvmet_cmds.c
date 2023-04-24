@@ -13,23 +13,7 @@
 LIST_HEAD(ctrl_list);
 pthread_mutex_t ctrl_mutex;
 
-static int nvmf_discovery_genctr = 1;
 static int nvmf_ctrl_id = 1;
-
-#define ctrl_info(e, f, x...)					\
-	do {							\
-		printf("ctrl %d qid %d: " f "\n",		\
-		       (e)->ctrl->cntlid, (e)->qid, ##x);	\
-		fflush(stdout);					\
-	} while (0)
-
-#define ctrl_err(e, f, x...)					\
-	do {							\
-		printf("ctrl %d qid %d: " f "\n",		\
-		       (e)->ctrl->cntlid, (e)->qid, ##x);	\
-		fflush(stdout);					\
-	} while (0)
-
 
 static int send_response(struct endpoint *ep, struct ep_qe *qe,
 			 u16 status)

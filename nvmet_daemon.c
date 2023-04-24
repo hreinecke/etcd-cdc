@@ -58,7 +58,7 @@ static int daemonize(void)
 
 	pid = fork();
 	if (pid < 0) {
-		fprintf(stderr, "fork failed, error %d", pid);
+		fprintf(stderr, "fork failed, error %d\n", pid);
 		return pid;
 	}
 
@@ -69,12 +69,12 @@ static int daemonize(void)
 
 	sid = setsid();
 	if (sid < 0) {
-		fprintf(stderr, "setsid failed, error %d", sid);
+		fprintf(stderr, "setsid failed, error %d\n", sid);
 		return sid;
 	}
 
 	if ((chdir("/")) < 0) {
-		fprintf(stderr, "could not change dir to /");
+		fprintf(stderr, "could not change dir to /\n");
 		return -1;
 	}
 
@@ -96,7 +96,7 @@ static struct host_iface *new_host_iface(const char *ifaddr,
 	strcpy(iface->address, ifaddr);
 	iface->adrfam = adrfam;
 	if (iface->adrfam != AF_INET && iface->adrfam != AF_INET6) {
-		fprintf(stderr, "invalid address family %d", adrfam);
+		fprintf(stderr, "invalid address family %d\n", adrfam);
 		free(iface);
 		return NULL;
 	}
@@ -107,7 +107,7 @@ static struct host_iface *new_host_iface(const char *ifaddr,
 		iface->port_type = (1 << NVME_NQN_NVM);
 	pthread_mutex_init(&iface->ep_mutex, NULL);
 	INIT_LIST_HEAD(&iface->ep_list);
-	printf("iface %d: listening on %s address %s port %d",
+	printf("iface %d: listening on %s address %s port %d\n",
 	       iface->portid,
 	       iface->adrfam == AF_INET ? "ipv4" : "ipv6",
 	       iface->address, iface->port_num);
@@ -146,7 +146,7 @@ static int get_iface(struct etcd_cdc_ctx *ctx, const char *ifname)
 		ret = getnameinfo(ifa->ifa_addr, addrlen,
 				  host, NI_MAXHOST, NULL, 0, NI_NUMERICHOST);
 		if (ret) {
-			fprintf(stderr, "getnameinfo failed, error %d", ret);
+			fprintf(stderr, "getnameinfo failed, error %d\n", ret);
 			continue;
 		}
 		iface = new_host_iface(host, ifa->ifa_addr->sa_family, 8009);
@@ -175,7 +175,7 @@ void *run_host_interface(void *arg)
 
 	ret = tcp_init_listener(iface);
 	if (ret) {
-		fprintf(stderr, "failed to start pseudo target, error %d", ret);
+		fprintf(stderr, "failed to start listener, error %d\n", ret);
 		pthread_exit(NULL);
 		return NULL;
 	}
@@ -189,7 +189,7 @@ void *run_host_interface(void *arg)
 		if (id < 0) {
 			if (id != -EAGAIN)
 				fprintf(stderr,
-					"Host connection failed, error %d", id);
+					"listener connection failed, error %d\n", id);
 			continue;
 		}
 		ep = enqueue_endpoint(id, iface);
@@ -203,12 +203,13 @@ void *run_host_interface(void *arg)
 		if (ret) {
 			ep->pthread = 0;
 			fprintf(stderr,
-				"failed to start endpoint thread, error %d", ret);
+				"failed to start endpoint thread, error %d\n",
+				ret);
 		}
 		pthread_attr_destroy(&pthread_attr);
 	}
 
-	printf("iface %d: destroy listener", iface->portid);
+	printf("iface %d: destroy listener\n", iface->portid);
 
 	tcp_destroy_listener(iface);
 	pthread_mutex_lock(&iface->ep_mutex);
@@ -246,17 +247,14 @@ static int add_host_port(int port)
 	return iface_num;
 }
 
-static void show_help(char *app)
+static void show_help(char *app, struct option args[])
 {
-	const char *arg_list = "{-d} {-S}";
+	struct option *opt = args;
 
-	printf("Usage: %s %s", app, arg_list);
+	printf("Usage: %s <options>\n", app);
 
-	printf("  -d - enable debug prints in log files");
-	printf("  -S - run as a standalone process (default is daemon)");
-	printf("  -i - interface to use (default: 'lo')");
-	printf("  -p - transport service id (e.g. 4420)");
-	printf("  -n - Unique discvoery NQN");
+	for (opt = args; opt->name != NULL; opt++)
+		printf("  -%c / --%s\n", opt->val, opt->name);
 }
 
 static int parse_args(struct etcd_cdc_ctx *ctx, int argc, char *argv[])
@@ -268,6 +266,7 @@ static int parse_args(struct etcd_cdc_ctx *ctx, int argc, char *argv[])
 	int port_max = 0, port, idx;
 	int iface_num = 0;
 	struct option getopt_arg[] = {
+		{"help", no_argument, 0, '?'},
 		{"discovery_nqn", required_argument, 0, 'd'},
 		{"standalone", no_argument, 0, 'S'},
 		{"interface", required_argument, 0, 'i'},
@@ -277,6 +276,7 @@ static int parse_args(struct etcd_cdc_ctx *ctx, int argc, char *argv[])
 		{"etcd_ssl", no_argument, 0, 's'},
 		{"ttl", required_argument, 0, 't'},
 		{"verbose", no_argument, 0, 'v'},
+		{NULL, 0, 0, 0},
 	};
 	int getopt_ind;
 
@@ -284,7 +284,7 @@ static int parse_args(struct etcd_cdc_ctx *ctx, int argc, char *argv[])
 	debug = 0;
 	run_as_daemon = 1;
 
-	while ((opt = getopt_long(argc, argv, "d:Si:e:p:h:st:v",
+	while ((opt = getopt_long(argc, argv, "d:Si:e:p:h:st:v?",
 				  getopt_arg, &getopt_ind)) != -1) {
 		switch (opt) {
 		case 'd':
@@ -308,12 +308,12 @@ static int parse_args(struct etcd_cdc_ctx *ctx, int argc, char *argv[])
 			errno = 0;
 			if (port_max >= 16) {
 				fprintf(stderr,
-					"Too many port numbers specified");
+					"Too many port numbers specified\n");
 				return 1;
 			}
 			port = strtoul(optarg, &eptr, 10);
 			if (errno || port == 0 || port > LONG_MAX) {
-				fprintf(stderr, "Invalid port number '%s'",
+				fprintf(stderr, "Invalid port number '%s'\n",
 					optarg);
 				return 1;
 			}
@@ -331,7 +331,7 @@ static int parse_args(struct etcd_cdc_ctx *ctx, int argc, char *argv[])
 		case '?':
 		default:
 help:
-			show_help(argv[0]);
+			show_help(argv[0], getopt_arg);
 			return 1;
 		}
 	}
@@ -343,25 +343,17 @@ help:
 
 	if (list_empty(&iface_linked_list)) {
 		if (get_iface(ctx, "lo") < 0) {
-			fprintf(stderr, "Failed to initialize iface 'lo'");
+			fprintf(stderr, "Failed to initialize iface 'lo'\n");
 			return 1;
 		}
 		iface_num++;
 	}
 
-	if (!port_max) {
-		struct host_iface *iface;
-
-		/* No port specified; use 8009 as I/O port, too */
-		list_for_each_entry(iface, &iface_linked_list, node) {
-			iface->port_type |= (1 << NVME_NQN_NVM);
-		}
-	}
 	for (idx = 0; idx < port_max; idx++)
 		add_host_port(port_num[idx]);
 
 	if (list_empty(&iface_linked_list)) {
-		fprintf(stderr, "invalid host interface configuration");
+		fprintf(stderr, "invalid host interface configuration\n");
 		return 1;
 	}
 
