@@ -314,6 +314,9 @@ static int format_disc_log(void *data, u64 data_offset,
 	int log_len = data_len;
 
 	log_buf = nvmet_etcd_disc_log(ep->ctx, ep->ctrl->nqn, &log_len);
+	if (!log_buf)
+		return 0;
+
 	if (log_len > data_len)
 		log_len = data_len;
 	memcpy(data, (u8 *)log_buf + data_offset, log_len);
@@ -326,8 +329,8 @@ static int format_disc_log(void *data, u64 data_offset,
 static int handle_get_log_page(struct endpoint *ep, struct ep_qe *qe,
 			       struct nvme_command *cmd)
 {
-	int ret = 0;
-	u64 offset = le64toh(cmd->get_log_page.lpo), log_len;
+	int ret = 0, log_len;
+	u64 offset = le64toh(cmd->get_log_page.lpo);
 
 #ifdef DEBUG_COMMANDS
 	print_debug("nvme_get_log_page opcode %02x lid %02x offset %lu len %lu",
@@ -346,6 +349,10 @@ static int handle_get_log_page(struct endpoint *ep, struct ep_qe *qe,
 		/* Discovery log */
 		log_len = format_disc_log(qe->data, qe->data_pos,
 					  qe->data_len, ep);
+		if (!log_len) {
+			ctrl_err(ep, "get_log_page: discovery log failed");
+			return NVME_SC_INTERNAL;
+		}
 		break;
 	default:
 		ctrl_err(ep, "get_log_page: lid %02x not supported",
