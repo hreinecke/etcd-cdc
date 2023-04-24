@@ -83,7 +83,6 @@ enum { RECV_PDU, RECV_DATA, HANDLE_PDU };
 struct endpoint {
 	struct list_head node;
 	pthread_t pthread;
-	struct io_uring uring;
 	struct host_iface *iface;
 	struct ctrl_conn *ctrl;
 	struct ep_qe *qes;
@@ -133,7 +132,6 @@ struct host_iface {
 	pthread_mutex_t ep_mutex;
 	char address[41];
 	int port_num;
-	int port_type;
 	int adrfam;
 	int portid;
 	int listenfd;
@@ -164,9 +162,24 @@ static inline void set_response(struct nvme_completion *resp,
 
 #define ctrl_err(e, f, x...)					\
 	do {							\
-		printf("ctrl %d qid %d: " f "\n",		\
-		       (e)->ctrl->cntlid, (e)->qid, ##x);	\
+		fprintf(stderr, "ctrl %d qid %d: " f "\n",	\
+		       (e)->ctrl ? (e)->ctrl->cntlid : -1,	\
+		       (e)->qid, ##x);				\
+		fflush(stderr);					\
+	} while (0)
+
+#define ep_info(e, f, x...)					\
+	do {							\
+		printf("ep %d: " f "\n",			\
+		       (e)->sockfd, ##x);			\
 		fflush(stdout);					\
+	} while (0)
+
+#define ep_err(e, f, x...)					\
+	do {							\
+		fprintf(stderr, "ep %d: " f "\n",		\
+			(e)->sockfd, ##x);			\
+		fflush(stderr);					\
 	} while (0)
 
 

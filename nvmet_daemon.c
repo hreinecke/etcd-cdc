@@ -9,7 +9,7 @@
 #include <fcntl.h>
 #include <netdb.h>
 #include <ifaddrs.h>
-
+#include <json-c/json.h>
 #include "nvmet_common.h"
 #include "nvmet_endpoint.h"
 #include "nvmet_tcp.h"
@@ -20,6 +20,7 @@ char *discovery_nqn;
 int stopped;
 int debug;
 static int signalled;
+static int portid;
 
 static char *default_etcd_host = "localhost";
 static char *default_etcd_proto = "http";
@@ -42,6 +43,7 @@ struct etcd_cdc_ctx *etcd_init(void)
 	ctx->port = default_etcd_port;
 	ctx->lease = -1;
 	ctx->ttl = 30;
+	ctx->resp_obj = json_object_new_object();
 
 	return ctx;
 }
@@ -54,7 +56,7 @@ static void signal_handler(int sig_num)
 
 static int daemonize(void)
 {
-	pid_t			 pid, sid;
+	pid_t pid, sid;
 
 	pid = fork();
 	if (pid < 0) {
@@ -100,11 +102,8 @@ static struct host_iface *new_host_iface(const char *ifaddr,
 		free(iface);
 		return NULL;
 	}
+	iface->portid = portid++;
 	iface->port_num = port;
-	if (port == 8009)
-		iface->port_type = (1 << NVME_NQN_CUR);
-	else
-		iface->port_type = (1 << NVME_NQN_NVM);
 	pthread_mutex_init(&iface->ep_mutex, NULL);
 	INIT_LIST_HEAD(&iface->ep_list);
 	printf("iface %d: listening on %s address %s port %d\n",
@@ -174,8 +173,10 @@ void *run_host_interface(void *arg)
 	pthread_sigmask(SIG_BLOCK, &set, NULL);
 
 	ret = tcp_init_listener(iface);
-	if (ret) {
-		fprintf(stderr, "failed to start listener, error %d\n", ret);
+	if (ret < 0) {
+		fprintf(stderr,
+			"iface %d: failed to start listener, error %d\n",
+			iface->portid, ret);
 		pthread_exit(NULL);
 		return NULL;
 	}
@@ -189,7 +190,7 @@ void *run_host_interface(void *arg)
 		if (id < 0) {
 			if (id != -EAGAIN)
 				fprintf(stderr,
-					"listener connection failed, error %d\n", id);
+					"iface %d: listener connection failed, error %d\n", iface->portid, id);
 			continue;
 		}
 		ep = enqueue_endpoint(id, iface);
@@ -203,8 +204,8 @@ void *run_host_interface(void *arg)
 		if (ret) {
 			ep->pthread = 0;
 			fprintf(stderr,
-				"failed to start endpoint thread, error %d\n",
-				ret);
+				"iface %d: failed to start endpoint thread, error %d\n",
+				iface->portid, ret);
 		}
 		pthread_attr_destroy(&pthread_attr);
 	}
@@ -233,8 +234,6 @@ static int add_host_port(int port)
 
 	list_for_each_entry(iface, &iface_linked_list, node) {
 		if (iface->port_num == port)
-			continue;
-		if (iface->port_num != 8009)
 			continue;
 		new = new_host_iface(iface->address, iface->adrfam, port);
 		if (new) {
@@ -326,7 +325,7 @@ static int parse_args(struct etcd_cdc_ctx *ctx, int argc, char *argv[])
 			ctx->ttl = atoi(optarg);
 			break;
 		case 'v':
-			debug++;
+			ctx->debug++;
 			break;
 		case '?':
 		default:

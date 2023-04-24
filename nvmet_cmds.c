@@ -141,19 +141,20 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 
 	ret = tcp_recv_data(ep, connect, qe->data_len);
 	if (ret) {
-		fprintf(stderr, "tcp_recv_data failed with error %d", errno);
+		fprintf(stderr, "ep %d: tcp_recv_data failed with error %d\n",
+			ep->sockfd, errno);
 		return ret;
 	}
 
 	cntlid = le16toh(connect->cntlid);
 
 	if (qid == 0 && cntlid != 0xFFFF) {
-		fprintf(stderr, "bad controller id %x, expecting %x",
-			cntlid, 0xffff);
+		fprintf(stderr, "ep %d: bad controller id %x, expecting %x\n",
+			ep->sockfd, cntlid, 0xffff);
 		return NVME_SC_CONNECT_INVALID_PARAM;
 	}
 	if (!sqsize) {
-		fprintf(stderr, "ctrl %d qid %d invalid sqsize",
+		fprintf(stderr, "ctrl %d qid %d: invalid sqsize\n",
 			cntlid, qid);
 		return NVME_SC_CONNECT_INVALID_PARAM;
 	}
@@ -164,7 +165,7 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 	if (qid == 0) {
 		ep->qsize = NVMF_SQ_DEPTH;
 	} else if (endpoint_update_qdepth(ep, sqsize) < 0) {
-		fprintf(stderr, "ctrl %d qid %d failed to increase sqsize %d",
+		fprintf(stderr, "ctrl %d qid %d failed to increase sqsize %d\n",
 			cntlid, qid, sqsize);
 		return NVME_SC_INTERNAL;
 	}
@@ -173,7 +174,7 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 
 	if (strcmp(connect->subsysnqn, NVME_DISC_SUBSYS_NAME) &&
 	    (!discovery_nqn || strcmp(connect->subsysnqn, discovery_nqn))) {
-		fprintf(stderr, "subsystem '%s' not found",
+		fprintf(stderr, "subsystem '%s' not found\n",
 			connect->subsysnqn);
 		return NVME_SC_CONNECT_INVALID_HOST;
 	}
@@ -189,11 +190,11 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 		}
 	}
 	if (!ep->ctrl) {
-		printf("Allocating new controller '%s'",
+		printf("Allocating new controller '%s'\n",
 		       connect->hostnqn);
 		ctrl = malloc(sizeof(*ctrl));
 		if (!ctrl) {
-			fprintf(stderr, "Out of memory allocating controller");
+			fprintf(stderr, "Out of memory allocating controller\n");
 		} else {
 			memset(ctrl, 0, sizeof(*ctrl));
 			strncpy(ctrl->nqn, connect->hostnqn, MAX_NQN_SIZE);
@@ -208,13 +209,12 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 	pthread_mutex_unlock(&ctrl_mutex);
 	if (!ep->ctrl) {
 		fprintf(stderr,
-			"bad controller id %x for queue %d, expecting %x",
-			cntlid, qid, ctrl->cntlid);
+			"ep %d: bad controller id %x for queue %d, expecting %x\n",
+			ep->sockfd, cntlid, qid, ctrl->cntlid);
 		ret = NVME_SC_CONNECT_INVALID_PARAM;
 	}
 	if (!ret) {
-		printf("ctrl %d qid %d connected",
-		       ep->ctrl->cntlid, ep->qid);
+		ctrl_info(ep, "connected\n");
 		qe->resp.result.u16 = htole16(ep->ctrl->cntlid);
 	}
 	return ret;
@@ -233,7 +233,7 @@ void handle_disconnect(struct endpoint *ep, int shutdown)
 		ctrl->num_endpoints--;
 		ep->ctrl = NULL;
 		if (!ctrl->num_endpoints) {
-			printf("ctrl %d: deleting controller",
+			printf("ctrl %d: deleting controller\n",
 			       ctrl->cntlid);
 			list_del(&ctrl->node);
 			free(ctrl);
@@ -295,7 +295,7 @@ static int handle_identify(struct endpoint *ep, struct ep_qe *qe,
 		id_len = handle_identify_ctrl(ep, qe->data, qe->data_len);
 		break;
 	default:
-		fprintf(stderr, "unexpected identify command cns %u", cns);
+		ctrl_err(ep, "unexpected identify command cns %u", cns);
 		return NVME_SC_BAD_ATTRIBUTES;
 	}
 
@@ -305,7 +305,7 @@ static int handle_identify(struct endpoint *ep, struct ep_qe *qe,
 	qe->data_pos = 0;
 	ret = tcp_send_data(ep, qe, id_len);
 	if (ret)
-		fprintf(stderr, "tcp_send_data failed with %d", ret);
+		ctrl_err(ep, "tcp_send_data failed with %d", ret);
 	return ret;
 }
 
@@ -350,13 +350,13 @@ static int handle_get_log_page(struct endpoint *ep, struct ep_qe *qe,
 					  qe->data_len, ep);
 		break;
 	default:
-		fprintf(stderr, "get_log_page: lid %02x not supported",
+		ctrl_err(ep, "get_log_page: lid %02x not supported",
 			cmd->get_log_page.lid);
 		return NVME_SC_INVALID_FIELD;
 	}
 	ret = tcp_send_data(ep, qe, log_len);
 	if (ret)
-		fprintf(stderr, "tcp_send_data failed with %d", errno);
+		ctrl_err(ep, "tcp_send_data failed with %d", errno);
 
 	return ret;
 }
@@ -378,8 +378,7 @@ int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 			.command_id = ccid,
 		};
 
-		fprintf(stderr, "endpoint %d ccid %#x queue busy",
-			ep->qid, ccid);
+		ctrl_err(ep, "ccid %#x queue busy", ccid);
 		return tcp_send_rsp(ep, &resp);
 	}
 	memset(&qe->resp, 0, sizeof(qe->resp));

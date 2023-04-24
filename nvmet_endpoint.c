@@ -46,14 +46,14 @@ void *endpoint_thread(void *arg)
 	epollfd = epoll_create(1);
 	if (epollfd < 0) {
 		fprintf(stderr, "ep %d: error %d creating epoll instance\n",
-			ep->qid, errno);
+			ep->sockfd, errno);
 		goto out_disconnect;
 	}
 	ev.events = EPOLLIN;
 	ev.data.fd = ep->sockfd;
 	if (epoll_ctl(epollfd, EPOLL_CTL_ADD, ep->sockfd, &ev) < 0) {
 		fprintf(stderr, "ep %d: failed to add epoll fd, error %d\n",
-			ep->qid, errno);
+			ep->sockfd, errno);
 		goto out_close;
 	}
 
@@ -71,7 +71,7 @@ void *endpoint_thread(void *arg)
 		}
 		if (ev.data.fd != ep->sockfd) {
 			fprintf(stderr, "ep %d: epoll invalid fd\n",
-				ep->qid);
+				ep->sockfd);
 			continue;
 		}
 		if (ep->recv_state == RECV_PDU) {
@@ -124,7 +124,7 @@ out_disconnect:
 
 int run_endpoint(struct endpoint *ep, int id)
 {
-	int			 ret;
+	int ret;
 
 	ret = tcp_create_endpoint(ep, id);
 	if (ret) {
