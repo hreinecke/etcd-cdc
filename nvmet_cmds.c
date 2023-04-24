@@ -311,7 +311,7 @@ static int format_disc_log(void *data, u64 data_offset,
 			   u64 data_len, struct endpoint *ep)
 {
 	u8 *log_buf;
-	int log_len = data_len;
+	size_t log_len = data_len;
 
 	log_buf = nvmet_etcd_disc_log(ep->ctx, ep->ctrl->nqn, &log_len);
 	if (!log_buf)
@@ -320,12 +320,12 @@ static int format_disc_log(void *data, u64 data_offset,
 	if (log_len > data_len)
 		log_len = data_len;
 	if (data_offset > log_len) {
-		ctrl_err(ep, "invalid discovery log page offset %llu len %u\n",
+		ctrl_err(ep, "invalid discovery log page offset %llu len %lu",
 			 data_offset, log_len);
 		return 0;
 	}
 	memcpy(data, (u8 *)log_buf + data_offset, log_len);
-	ctrl_info(ep, "Returning discovery log page offset %llu len %u",
+	ctrl_info(ep, "Returning discovery log page offset %llu len %lu",
 		  data_offset, log_len);
 	free(log_buf);
 	return data_len;

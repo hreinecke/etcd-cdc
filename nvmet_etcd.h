@@ -23,7 +23,7 @@
 
 #include "etcd_client.h"
 
-int set_genctr(struct etcd_cdc_ctx *ctx, int genctr);
+void set_genctr(struct etcd_cdc_ctx *ctx, int genctr);
 int process_inotify_event(struct etcd_cdc_ctx *, char *, int);
 int watch_port_dir(struct etcd_cdc_ctx *);
 int watch_subsys_dir(struct etcd_cdc_ctx *);
