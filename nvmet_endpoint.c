@@ -45,15 +45,13 @@ void *endpoint_thread(void *arg)
 
 	epollfd = epoll_create(1);
 	if (epollfd < 0) {
-		fprintf(stderr, "ep %d: error %d creating epoll instance\n",
-			ep->sockfd, errno);
+		ep_err(ep, "error %d creating epoll instance", errno);
 		goto out_disconnect;
 	}
 	ev.events = EPOLLIN;
 	ev.data.fd = ep->sockfd;
 	if (epoll_ctl(epollfd, EPOLL_CTL_ADD, ep->sockfd, &ev) < 0) {
-		fprintf(stderr, "ep %d: failed to add epoll fd, error %d\n",
-			ep->sockfd, errno);
+		ep_err(ep, "failed to add epoll fd, error %d", errno);
 		goto out_close;
 	}
 
@@ -64,14 +62,11 @@ void *endpoint_thread(void *arg)
 			continue;
 
 		if (ret < 0) {
-			fprintf(stderr, "ctrl %d qid %d poll error %d\n",
-				ep->ctrl ? ep->ctrl->cntlid : -1,
-				ep->qid, ret);
+			ep_err(ep, "epoll error %d", ret);
 			break;
 		}
 		if (ev.data.fd != ep->sockfd) {
-			fprintf(stderr, "ep %d: epoll invalid fd\n",
-				ep->sockfd);
+			ep_err(ep, "epoll invalid fd %d\n", ev.data.fd);
 			continue;
 		}
 		if (ep->recv_state == RECV_PDU) {
@@ -96,15 +91,12 @@ void *endpoint_thread(void *arg)
 		 * is closed; that shouldn't count as an error.
 		 */
 		if (ret == -ENODATA) {
-			printf("ctrl %d qid %d connection closed\n",
-			       ep->ctrl ? ep->ctrl->cntlid : -1,
-			       ep->qid);
+			ep_info(ep, "connection closed");
 			break;
 		}
 		if (ret < 0) {
-			fprintf(stderr, "ctrl %d qid %d error %d retry %d\n",
-				ep->ctrl ? ep->ctrl->cntlid : -1,
-				ep->qid, ret, ep->kato_countdown);
+			ep_err(ep, "error %d retry %d",
+			       ret, ep->kato_countdown);
 			break;
 		}
 	}
@@ -114,9 +106,8 @@ out_close:
 out_disconnect:
 	handle_disconnect(ep, !stopped);
 
-	printf("ctrl %d qid %d %s\n",
-	       ep->ctrl ? ep->ctrl->cntlid : -1, ep->qid,
-	       stopped ? "stopped" : "disconnected");
+	ep_info(ep, "%s",
+		stopped ? "stopped" : "disconnected");
 	pthread_exit(NULL);
 
 	return NULL;
@@ -139,8 +130,7 @@ retry:
 		if (ret == -EAGAIN)
 			goto retry;
 
-		fprintf(stderr, "ep %d: accept failed error %d\n",
-			id, ret);
+		ep_err(ep, "accept failed error %d", ret);
 		return ret;
 	}
 
@@ -171,8 +161,7 @@ struct endpoint *enqueue_endpoint(int id, struct host_iface *iface)
 
 	ret = run_endpoint(ep, id);
 	if (ret) {
-		fprintf(stderr, "ep %d: run_endpoint failed error %d",
-			id, ret);
+		ep_err(ep, "run_endpoint failed error %d", ret);
 		goto out;
 	}
 

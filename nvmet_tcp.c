@@ -294,7 +294,7 @@ int tcp_accept_connection(struct endpoint *ep)
 		       sizeof(*icrep) - len);
 		ret = -ENODATA;
 	} else {
-		ep_info(ep, "wrote %d icresp bytes\n", len);
+		ep_info(ep, "wrote %d icresp bytes", len);
 		ret = 0;
 	}
 
@@ -623,7 +623,7 @@ int tcp_read_msg(struct endpoint *ep)
 		ep_info(ep, "read %u msg bytes", msg_len);
 		len = tcp_ep_read(ep, msg, msg_len);
 		if (len < 0) {
-			ep_err(ep, "failed to read msg hdr, error %d\n",
+			ep_err(ep, "failed to read msg hdr, error %d",
 			       errno);
 			return -errno;
 		}

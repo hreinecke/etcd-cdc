@@ -141,21 +141,20 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 
 	ret = tcp_recv_data(ep, connect, qe->data_len);
 	if (ret) {
-		fprintf(stderr, "ep %d: tcp_recv_data failed with error %d\n",
-			ep->sockfd, errno);
+		ep_err(ep, "tcp_recv_data failed with error %d", errno);
 		return ret;
 	}
 
 	cntlid = le16toh(connect->cntlid);
 
 	if (qid == 0 && cntlid != 0xFFFF) {
-		fprintf(stderr, "ep %d: bad controller id %x, expecting %x\n",
-			ep->sockfd, cntlid, 0xffff);
+		ep_err(ep, "bad controller id %x, expecting %x",
+		       cntlid, 0xffff);
 		return NVME_SC_CONNECT_INVALID_PARAM;
 	}
 	if (!sqsize) {
-		fprintf(stderr, "ctrl %d qid %d: invalid sqsize\n",
-			cntlid, qid);
+		ep_err(ep, "cntlid %d qid %d invalid sqsize",
+		       cntlid, qid);
 		return NVME_SC_CONNECT_INVALID_PARAM;
 	}
 	if (ep->ctrl) {
@@ -165,8 +164,8 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 	if (qid == 0) {
 		ep->qsize = NVMF_SQ_DEPTH;
 	} else if (endpoint_update_qdepth(ep, sqsize) < 0) {
-		fprintf(stderr, "ctrl %d qid %d failed to increase sqsize %d\n",
-			cntlid, qid, sqsize);
+		ep_err(ep, "qid %d failed to increase sqsize %d",
+		       qid, sqsize);
 		return NVME_SC_INTERNAL;
 	}
 
@@ -174,8 +173,8 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 
 	if (strcmp(connect->subsysnqn, NVME_DISC_SUBSYS_NAME) &&
 	    (!discovery_nqn || strcmp(connect->subsysnqn, discovery_nqn))) {
-		fprintf(stderr, "subsystem '%s' not found\n",
-			connect->subsysnqn);
+		ep_err(ep, "subsystem '%s' not found",
+		       connect->subsysnqn);
 		return NVME_SC_CONNECT_INVALID_HOST;
 	}
 
@@ -190,11 +189,11 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 		}
 	}
 	if (!ep->ctrl) {
-		printf("Allocating new controller '%s'\n",
-		       connect->hostnqn);
+		ep_info(ep, "Allocating new controller '%s'",
+			connect->hostnqn);
 		ctrl = malloc(sizeof(*ctrl));
 		if (!ctrl) {
-			fprintf(stderr, "Out of memory allocating controller\n");
+			ep_err(ep, "Out of memory allocating controller");
 		} else {
 			memset(ctrl, 0, sizeof(*ctrl));
 			strncpy(ctrl->nqn, connect->hostnqn, MAX_NQN_SIZE);
@@ -208,13 +207,12 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 	}
 	pthread_mutex_unlock(&ctrl_mutex);
 	if (!ep->ctrl) {
-		fprintf(stderr,
-			"ep %d: bad controller id %x for queue %d, expecting %x\n",
-			ep->sockfd, cntlid, qid, ctrl->cntlid);
+		ep_err(ep, "bad controller id %x for queue %d, expecting %x",
+		       cntlid, qid, ctrl->cntlid);
 		ret = NVME_SC_CONNECT_INVALID_PARAM;
 	}
 	if (!ret) {
-		ctrl_info(ep, "connected\n");
+		ctrl_info(ep, "connected");
 		qe->resp.result.u16 = htole16(ep->ctrl->cntlid);
 	}
 	return ret;
@@ -427,7 +425,7 @@ int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 	}
 
 	if (ret < 0) {
-		ctrl_err(ep, "handle_request error %d\n", ret);
+		ctrl_err(ep, "handle_request error %d", ret);
 		return ret;
 	}
 
