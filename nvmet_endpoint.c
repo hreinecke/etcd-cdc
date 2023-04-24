@@ -74,7 +74,7 @@ void *endpoint_thread(void *arg)
 		}
 		if (!ret && ep->recv_state == HANDLE_PDU) {
 			ret = tcp_handle_msg(ep);
-			if (!ret) {
+			if (ret >= 0) {
 				ep->recv_pdu_len = 0;
 				ep->recv_state = RECV_PDU;
 			}
