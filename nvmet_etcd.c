@@ -175,27 +175,36 @@ int main (int argc, char *argv[])
 	parse_opts(ctx, argc, argv);
 
 	ret = etcd_lease_grant(ctx);
-	if (ret < 0)
+	if (ret < 0) {
+		etcd_exit(ctx);
 		exit(1);
+	}
 	sigemptyset(&sigmask);
 	sigaddset(&sigmask, SIGINT);
 	sigaddset(&sigmask, SIGTERM);
 
 	if (sigprocmask(SIG_BLOCK, &sigmask, NULL) < 0) {
 		fprintf(stderr, "Couldn't block signals, error %d\n", errno);
+		etcd_lease_revoke(ctx);
+		etcd_exit(ctx);
 		exit(1);
 	}
 	signal_fd = signalfd(-1, &sigmask, 0);
 	if (signal_fd < 0) {
 		fprintf(stderr, "Couldn't setup signal fd, error %d\n", errno);
+		etcd_lease_revoke(ctx);
+		etcd_exit(ctx);
 		exit(1);
 	}
 	inotify_fd = inotify_init();
 	if (inotify_fd < 0) {
 		fprintf(stderr, "Could not setup inotify, error %d\n", errno);
+		etcd_lease_revoke(ctx);
+		etcd_exit(ctx);
 		exit(1);
 	}
 
+	set_genctr(ctx, 1);
 	watch_subsys_dir(ctx);
 	watch_port_dir(ctx);
 

@@ -132,6 +132,43 @@ static struct nvmet_port_subsys *find_subsys_from_host(char *subsys_host_dir)
 	return NULL;
 }
 
+int set_genctr(struct etcd_cdc_ctx *ctx, int genctr)
+{
+	char key[1024];
+	char value[1024];
+
+	sprintf(key, "%s/discovery/genctr", ctx->prefix);
+	sprintf(value, "%d", genctr);
+
+	if (etcd_kv_put(ctx, key, value) < 0) {
+		fprintf(stderr, "cannot add key %s, error %d\n",
+			key, errno);
+	}
+	printf("Updated key %s: %s\n", key, value);
+}
+
+static void update_genctr(struct etcd_cdc_ctx *ctx)
+{
+	char key[1024];
+	char value[1024], *eptr;
+	int genctr = 1;
+
+	sprintf(key, "%s/discovery/genctr", ctx->prefix);
+	if (etcd_kv_get(ctx, key, value) < 0) {
+		printf("cannot get key %s, errno %d\n",
+		       key, errno);
+	} else {
+		genctr = strtoul(value, &eptr, 10);
+		if (eptr == value) {
+			fprintf(stderr, "key %s invalid value %s\n",
+				key, value);
+			genctr = 1;
+		} else {
+			genctr++;
+		}
+	}
+}
+
 static void gen_host_kv_key(struct etcd_cdc_ctx *ctx,
 			    struct nvmet_subsys_host *host, enum kv_key_op op)
 {
@@ -169,6 +206,7 @@ static void gen_host_kv_key(struct etcd_cdc_ctx *ctx,
 			return;
 		}
 	}
+	update_genctr(ctx);
 }
 
 static void gen_subsys_kv_key(struct etcd_cdc_ctx *ctx,

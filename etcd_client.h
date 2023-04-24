@@ -30,7 +30,7 @@ struct etcd_cdc_ctx *etcd_init(void);
 struct etcd_cdc_ctx *etcd_dup(struct etcd_cdc_ctx *ctx);
 void etcd_exit(struct etcd_cdc_ctx *ctx);
 int etcd_kv_put(struct etcd_cdc_ctx *ctx, char *key, char *value);
-int etcd_kv_get(struct etcd_cdc_ctx *ctx, char *key);
+int etcd_kv_get(struct etcd_cdc_ctx *ctx, char *key, char *value);
 int etcd_kv_range(struct etcd_cdc_ctx *ctx, char *key);
 int etcd_kv_delete(struct etcd_cdc_ctx *ctx, char *key);
 int etcd_kv_watch(struct etcd_cdc_ctx *ctx, char *key);

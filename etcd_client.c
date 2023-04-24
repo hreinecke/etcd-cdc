@@ -331,7 +331,7 @@ int etcd_kv_put(struct etcd_cdc_ctx *ctx, char *key, char *value)
 	return ret;
 }
 
-int etcd_kv_get(struct etcd_cdc_ctx *ctx, char *key)
+int etcd_kv_get(struct etcd_cdc_ctx *ctx, char *key, char *value)
 {
 	char url[1024];
 	struct json_object *post_obj = NULL;
@@ -362,6 +362,19 @@ int etcd_kv_get(struct etcd_cdc_ctx *ctx, char *key)
 		if (err_obj) {
 			errno = json_object_get_int(err_obj);
 			ret = -1;
+		}
+	} else {
+		json_object_object_foreach(ctx->resp_obj, tmp_key, val_obj) {
+			if (strcmp(key, tmp_key)) {
+				fprintf(stderr, "key mismatch: %s %s\n",
+					key, tmp_key);
+				errno = EINVAL;
+				ret = -1;
+			} else {
+				strcpy(value, json_object_get_string(val_obj));
+				ret = 0;
+				break;
+			}
 		}
 	}
 
