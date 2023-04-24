@@ -32,6 +32,11 @@
 
 #include "nvmet_etcd.h"
 
+static char *default_etcd_host = "localhost";
+static char *default_etcd_proto = "http";
+static char *default_etcd_prefix = "nvmet";
+static int default_etcd_port = 2379;
+
 static char *base64_encode(const char *str, int str_len)
 {
 	int encoded_size = str_len * 2;
@@ -71,6 +76,56 @@ static char *base64_decode(const char *encoded_str)
 	*p = '\0';
 
 	return str;
+}
+
+struct etcd_cdc_ctx *etcd_init(void)
+{
+	struct etcd_cdc_ctx *ctx;
+
+	ctx = malloc(sizeof(struct etcd_cdc_ctx));
+	if (!ctx) {
+		fprintf(stderr, "cannot allocate context\n");
+		return NULL;
+	}
+	memset(ctx, 0, sizeof(struct etcd_cdc_ctx));
+	ctx->host = default_etcd_host;
+	ctx->proto = default_etcd_proto;
+	ctx->prefix = default_etcd_prefix;
+	ctx->port = default_etcd_port;
+	ctx->lease = -1;
+	ctx->ttl = 30;
+	ctx->resp_obj = json_object_new_object();
+
+	return ctx;
+}
+
+struct etcd_cdc_ctx *etcd_dup(struct etcd_cdc_ctx *ctx)
+{
+	struct etcd_cdc_ctx *new_ctx;
+
+	new_ctx = malloc(sizeof(struct etcd_cdc_ctx));
+	if (!new_ctx) {
+		fprintf(stderr, "cannot allocate context\n");
+		return NULL;
+	}
+	memset(new_ctx, 0, sizeof(struct etcd_cdc_ctx));
+	new_ctx->host = ctx->host;
+	new_ctx->proto = ctx->proto;
+	new_ctx->prefix = ctx->prefix;
+	new_ctx->port = ctx->port;
+	new_ctx->lease = -1;
+	new_ctx->ttl = ctx->ttl;
+	new_ctx->resp_obj = json_object_new_object();
+
+	return new_ctx;
+}
+
+void etcd_exit(struct etcd_cdc_ctx *ctx)
+{
+	if (!ctx)
+		return;
+	json_object_put(ctx->resp_obj);
+	free(ctx);
 }
 
 static size_t

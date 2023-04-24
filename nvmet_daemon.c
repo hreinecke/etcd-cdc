@@ -22,32 +22,6 @@ int debug;
 static int signalled;
 static int portid;
 
-static char *default_etcd_host = "localhost";
-static char *default_etcd_proto = "http";
-static char *default_etcd_prefix = "nvmet";
-static int default_etcd_port = 2379;
-
-struct etcd_cdc_ctx *etcd_init(void)
-{
-	struct etcd_cdc_ctx *ctx;
-
-	ctx = malloc(sizeof(struct etcd_cdc_ctx));
-	if (!ctx) {
-		fprintf(stderr, "cannot allocate context\n");
-		return NULL;
-	}
-	memset(ctx, 0, sizeof(struct etcd_cdc_ctx));
-	ctx->host = default_etcd_host;
-	ctx->proto = default_etcd_proto;
-	ctx->prefix = default_etcd_prefix;
-	ctx->port = default_etcd_port;
-	ctx->lease = -1;
-	ctx->ttl = 30;
-	ctx->resp_obj = json_object_new_object();
-
-	return ctx;
-}
-
 static void signal_handler(int sig_num)
 {
 	signalled = sig_num;
@@ -79,9 +53,6 @@ static int daemonize(void)
 		fprintf(stderr, "could not change dir to /\n");
 		return -1;
 	}
-
-	freopen("/var/log/nofuse_debug.log", "a", stdout);
-	freopen("/var/log/nofuse.log", "a", stderr);
 
 	return 0;
 }
@@ -393,8 +364,10 @@ int main(int argc, char *argv[])
 		return 1;
 
 	ret = parse_args(ctx, argc, argv);
-	if (ret)
+	if (ret) {
+		etcd_exit(ctx);
 		return ret;
+	}
 
 	signalled = stopped = 0;
 
@@ -414,6 +387,6 @@ int main(int argc, char *argv[])
 	}
 
 	free_interfaces();
-
+	etcd_exit(ctx);
 	return ret;
 }

@@ -39,9 +39,6 @@
 #include "nvmet_etcd.h"
 
 static char *default_configfs = "/sys/kernel/config/nvmet";
-static char *default_host = "localhost";
-static char *default_proto = "http";
-static char *default_prefix = "nvmet";
 
 #define INOTIFY_BUFFER_SIZE 8192
 
@@ -168,19 +165,12 @@ int main (int argc, char *argv[])
 	sigset_t sigmask;
 	int ret;
 
-	ctx = malloc(sizeof(struct etcd_cdc_ctx));
+	ctx = etcd_init();
 	if (!ctx) {
 		fprintf(stderr, "cannot allocate context\n");
 		exit(1);
 	}
-	memset(ctx, 0, sizeof(struct etcd_cdc_ctx));
-	ctx->host = default_host;
 	ctx->configfs = default_configfs;
-	ctx->proto = default_proto;
-	ctx->prefix = default_prefix;
-	ctx->port = 2379;
-	ctx->lease = -1;
-	ctx->ttl = 30;
 
 	parse_opts(ctx, argc, argv);
 
@@ -216,6 +206,6 @@ int main (int argc, char *argv[])
 	close(inotify_fd);
 	close(signal_fd);
 	etcd_lease_revoke(ctx);
-	free(ctx);
+	etcd_exit(ctx);
 	return 0;
 }
