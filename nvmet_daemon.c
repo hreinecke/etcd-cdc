@@ -63,6 +63,12 @@ static struct host_iface *new_host_iface(const char *ifaddr,
 {
 	struct host_iface *iface;
 
+	/* Check for duplicates */
+	list_for_each_entry(iface, &iface_linked_list, node) {
+		if (!strcmp(iface->address, ifaddr) &&
+		    iface->port_num == port)
+			return NULL;
+	}
 	iface = malloc(sizeof(*iface));
 	if (!iface)
 		return NULL;
@@ -84,6 +90,24 @@ static struct host_iface *new_host_iface(const char *ifaddr,
 	       iface->address, iface->port_num);
 
 	return iface;
+}
+
+static int register_host_iface(struct host_iface *iface)
+{
+	char key[1024], value[1024];
+
+	sprintf(key, "%s/ports/%s:%d", iface->ctx->prefix,
+		iface->address, iface->port_num);
+	sprintf(value, "trtype=tcp,traddr=%s,trsvcid=%d,adrfam=%s",
+		iface->address,iface->port_num,
+		iface->adrfam == AF_INET ? "ipv4" : "ipv6");
+	if (etcd_kv_put(iface->ctx, key, value) < 0) {
+		fprintf(stderr, "cannot add key %s, error %d\n",
+			key, errno);
+		return -1;
+	}
+	printf("registered key %s: %s\n", key, value);
+	return 0;
 }
 
 static int get_iface(struct etcd_cdc_ctx *ctx, const char *ifname, int port)
@@ -124,6 +148,7 @@ static int get_iface(struct etcd_cdc_ctx *ctx, const char *ifname, int port)
 		if (iface) {
 			iface->ctx = ctx;
 			list_add_tail(&iface->node, &iface_linked_list);
+			register_host_iface(iface);
 		}
         }
 	freeifaddrs(ifaddrs);
@@ -180,6 +205,7 @@ static int get_address(struct etcd_cdc_ctx *ctx, const char *arg)
 			if (iface) {
 				iface->ctx = ctx;
 				list_add_tail(&iface->node, &iface_linked_list);
+				register_host_iface(iface);
 			}
 			break;
 		}
@@ -287,7 +313,7 @@ static int parse_args(struct etcd_cdc_ctx *ctx, int argc, char *argv[])
 	discovery_nqn = NULL;
 	discovery_port = 8009;
 	debug = 0;
-	run_as_daemon = 1;
+	run_as_daemon = 0;
 
 	while ((opt = getopt_long(argc, argv, "a:dn:p:i:e:P:H:St:v?",
 				  getopt_arg, &getopt_ind)) != -1) {
