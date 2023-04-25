@@ -287,7 +287,7 @@ etcd_parse_set_response(char *ptr, size_t size, size_t nmemb, void *arg)
 	return size * nmemb;
 }
 
-int etcd_kv_put(struct etcd_cdc_ctx *ctx, char *key, char *value)
+int etcd_kv_put(struct etcd_cdc_ctx *ctx, char *key, char *value, bool lease)
 {
 	char url[1024];
 	struct json_object *post_obj = NULL;
@@ -305,8 +305,9 @@ int etcd_kv_put(struct etcd_cdc_ctx *ctx, char *key, char *value)
 	encoded_value = __b64enc(value, strlen(value));
 	json_object_object_add(post_obj, "value",
 			       json_object_new_string(encoded_value));
-	json_object_object_add(post_obj, "lease",
-			       json_object_new_int64(ctx->lease));
+	if (lease)
+		json_object_object_add(post_obj, "lease",
+				       json_object_new_int64(ctx->lease));
 
 	ret = etcd_kv_exec(ctx, url, post_obj, etcd_parse_set_response);
 	if (!ret) {

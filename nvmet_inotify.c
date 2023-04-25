@@ -142,7 +142,7 @@ void set_genctr(struct etcd_cdc_ctx *ctx, int genctr)
 		ctx->prefix, NVME_DISC_SUBSYS_NAME);
 	sprintf(value, "%d", genctr);
 
-	if (etcd_kv_put(ctx, key, value) < 0) {
+	if (etcd_kv_put(ctx, key, value, false) < 0) {
 		fprintf(stderr, "cannot add key %s, error %d\n",
 			key, errno);
 	}
@@ -173,7 +173,7 @@ static void gen_host_kv_key(struct etcd_cdc_ctx *ctx,
 			strcat(value, port->trsvcid);
 		}
 		printf("add key %s: %s\n", key, value);
-		if (etcd_kv_put(ctx, key, value) < 0) {
+		if (etcd_kv_put(ctx, key, value, true) < 0) {
 			fprintf(stderr, "cannot add key %s, error %d\n",
 				key, errno);
 			return;

@@ -108,7 +108,7 @@ static int register_host_iface(struct host_iface *iface)
 	sprintf(value, "trtype=tcp,traddr=%s,trsvcid=%d,adrfam=%s",
 		iface->address,iface->port_num,
 		iface->adrfam == AF_INET ? "ipv4" : "ipv6");
-	if (etcd_kv_put(iface->ctx, key, value) < 0) {
+	if (etcd_kv_put(iface->ctx, key, value, true) < 0) {
 		fprintf(stderr, "cannot add key %s, error %d\n",
 			key, errno);
 		return -1;

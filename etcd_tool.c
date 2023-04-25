@@ -135,7 +135,7 @@ int main(int argc, char **argv)
 			fprintf(stderr, "excess arguments for 'put'\n");
 			exit(1);
 		}
-		ret = etcd_kv_put(ctx, key, value);
+		ret = etcd_kv_put(ctx, key, value, true);
 		break;
 	case KV_KEY_OP_RANGE:
 	{
