@@ -65,6 +65,7 @@ struct nvmet_port {
 	char trtype[256];
 	char traddr[256];
 	char trsvcid[256];
+	char adrfam[256];
 };
 
 /* TYPE_PORT_SUBSYS */
@@ -166,8 +167,8 @@ static void gen_host_kv_key(struct etcd_cdc_ctx *ctx,
 	sprintf(key, "%s/%s/%s/%s", ctx->prefix,
 		host->hostnqn, subsys->subsysnqn, port->port_id);
 	if (op == KV_KEY_OP_ADD) {
-		sprintf(value,"trtype=%s,traddr=%s",
-			port->trtype, port->traddr);
+		sprintf(value,"trtype=%s,traddr=%s,adrfam=%s",
+			port->trtype, port->traddr, port->adrfam);
 		if (strlen(port->trsvcid)) {
 			strcat(value,",trsvcid=");
 			strcat(value, port->trsvcid);
@@ -292,6 +293,8 @@ static int port_read_attr(char *ports_dir, struct nvmet_port *port, char *attr)
 		attr_buf = port->traddr;
 	else if (!strcmp(attr, "trsvcid"))
 		attr_buf = port->trsvcid;
+	else if (!strcmp(attr, "adrfam"))
+		attr_buf = port->adrfam;
 	else {
 		fprintf(stderr, "Port %s: Invalid attribute '%s'\n",
 			port->port_id, attr);
@@ -331,6 +334,7 @@ static struct nvmet_port *update_port(char *ports_dir, char *port_id)
 	port_read_attr(ports_dir, port, "trtype");
 	port_read_attr(ports_dir, port, "traddr");
 	port_read_attr(ports_dir, port, "trsvcid");
+	port_read_attr(ports_dir, port, "adrfam");
 	return port;
 }
 

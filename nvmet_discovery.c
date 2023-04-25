@@ -11,7 +11,7 @@ static int parse_etcd_kv(char *prefix, char *hostnqn,
 {
 	char *key_parse, *key_save, *k, *eptr;
 	char *addr, *a, *addr_save;
-	char *traddr = NULL, *trtype = NULL, *trsvcid = NULL;
+	char *traddr = NULL, *trtype = NULL, *trsvcid = NULL, *adrfam;
 	int traddr_len;
 	unsigned char port;
 
@@ -77,6 +77,8 @@ static int parse_etcd_kv(char *prefix, char *hostnqn,
 			traddr = a + 7;
 		else if (!strncmp(a, "trsvcid=", 8))
 			trsvcid = a + 8;
+		else if (!strncmp(a, "adrfam=", 7))
+			adrfam = a + 7;
 		a = strtok_r(NULL, ",", &addr_save);
 	}
 	if (!trtype || !traddr) {
@@ -84,6 +86,17 @@ static int parse_etcd_kv(char *prefix, char *hostnqn,
 		return -EINVAL;
 	}
 	entry->adrfam = NVMF_ADDR_FAMILY_IP4;
+	if (adrfam) {
+		if (!strcmp(adrfam, "ipv4")) {
+			entry->adrfam = NVMF_ADDR_FAMILY_IP4;
+		} else if (!strcmp(adrfam, "ipv6")) {
+			entry->adrfam = NVMF_ADDR_FAMILY_IP6;
+		} else if (!strcmp(adrfam, "fc")) {
+			entry->adrfam = NVMF_ADDR_FAMILY_FC;
+		} else if (!strcmp(adrfam, "ib")) {
+			entry->adrfam = NVMF_ADDR_FAMILY_IB;
+		}
+	}
 	if (!strcmp(trtype, "tcp")) {
 		entry->trtype = NVMF_TRTYPE_TCP;
 	} else if (!strcmp(trtype, "fc")) {
