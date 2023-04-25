@@ -990,26 +990,3 @@ int etcd_lease_revoke(struct etcd_cdc_ctx *ctx)
 	json_object_put(post_obj);
 	return ret;
 }
-
-int etcd_kv_value(struct etcd_cdc_ctx *ctx, char *key, char *value)
-{
-	struct json_object_iterator obj_iter, obj_iter_end;
-
-	obj_iter = json_object_iter_begin(ctx->resp_obj);
-	obj_iter_end = json_object_iter_end(ctx->resp_obj);
-
-	while (!json_object_iter_equal(&obj_iter, &obj_iter_end)) {
-		const char *name = json_object_iter_peek_name(&obj_iter);
-		if (!strcmp(name, key)) {
-			struct json_object *val_obj;
-
-			val_obj = json_object_iter_peek_value(&obj_iter);
-			if (val_obj) {
-				strcpy(value, json_object_get_string(val_obj));
-				return 0;
-			}
-		}
-		json_object_iter_next(&obj_iter);
-	}
-	return -EINVAL;
-}

@@ -34,7 +34,6 @@ int etcd_kv_get(struct etcd_cdc_ctx *ctx, char *key);
 int etcd_kv_range(struct etcd_cdc_ctx *ctx, char *key);
 int etcd_kv_delete(struct etcd_cdc_ctx *ctx, char *key);
 int etcd_kv_watch(struct etcd_cdc_ctx *ctx, char *key);
-int etcd_kv_value(struct etcd_cdc_ctx *ctx, char *key, char *value);
 int etcd_kv_revision(struct etcd_cdc_ctx *ctx, char *key);
 
 int etcd_lease_grant(struct etcd_cdc_ctx *ctx);
