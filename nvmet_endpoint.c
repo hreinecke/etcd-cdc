@@ -57,9 +57,11 @@ void *endpoint_thread(void *arg)
 
 	while (!stopped) {
 		ret = epoll_wait(epollfd, &ev, 1, ep->kato_interval);
-		if (ret == 0)
-			/* epoll timeout */
+		if (ret == 0) {
+			/* epoll timeout, refresh lease */
+			ret = etcd_lease_keepalive(ep->ctx);
 			continue;
+		}
 
 		if (ret < 0) {
 			ep_err(ep, "epoll error %d", ret);

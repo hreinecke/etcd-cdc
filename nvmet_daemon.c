@@ -155,7 +155,6 @@ static int get_iface(struct etcd_cdc_ctx *ctx, const char *ifname, int port)
 		if (iface) {
 			iface->ctx = ctx;
 			list_add_tail(&iface->node, &iface_linked_list);
-			register_host_iface(iface);
 		}
         }
 	freeifaddrs(ifaddrs);
@@ -212,7 +211,6 @@ static int get_address(struct etcd_cdc_ctx *ctx, const char *arg)
 			if (iface) {
 				iface->ctx = ctx;
 				list_add_tail(&iface->node, &iface_linked_list);
-				register_host_iface(iface);
 			}
 			break;
 		}
@@ -437,11 +435,6 @@ int main(int argc, char *argv[])
 	if (!ctx)
 		return 1;
 
-	ret = etcd_lease_grant(ctx);
-	if (ret < 0) {
-		etcd_exit(ctx);
-		return ret;
-	}
 	signalled = stopped = 0;
 
 	ret = parse_args(ctx, argc, argv);
@@ -450,9 +443,18 @@ int main(int argc, char *argv[])
 		return ret;
 	}
 
+	ret = etcd_lease_grant(ctx);
+	if (ret < 0) {
+		etcd_exit(ctx);
+		return ret;
+	}
+
 	list_for_each_entry(iface, &iface_linked_list, node) {
 		pthread_attr_t pthread_attr;
 
+		ret = register_host_iface(iface);
+		if (ret)
+			continue;
 		pthread_attr_init(&pthread_attr);
 
 		ret = pthread_create(&iface->pthread, &pthread_attr,
