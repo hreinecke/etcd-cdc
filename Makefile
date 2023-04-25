@@ -28,7 +28,12 @@ $(TEST): $(TEST_OBJS) $(B64)
 clean:
 	$(RM) $(TEST_OBJS) $(PRG_OBJS) $(DISC_OBJS) $(PRG) $(TEST) $(DISC)
 
-nvmet_etcd.c: nvmet_etcd.h
-etcd_tool.c: nvmet_etcd.h
-nvmet_inotiry.c: nvmet_etcd.h list.h
-etcd_client: nvmet_etcd.h
+nvmet_etcd.c: etcd_client.h nvmet_etcd.h
+etcd_tool.c: etcd_client.h nvmet_etcd.h
+nvmet_inotify.c: etcd_client.h nvmet_etcd.h list.h
+nvmet_discovery.c: nvmet_common.h nvmet_tcp.h
+nvmet_cmds.c: nvmet_common.h nvmet_tcp.h
+nvmet_daemon.c: nvmet_common.h nvmet_endpoint.h nvmet_tcp.h
+nvmet_endpoint.c: nvmet_common.h nvmet_endpoint.h nvmet_tcp.h
+nvmet_tcp.c: types.h nvme.h nvme_tcp.h nvmet_common.h nvmet_tcp.h
+etcd_client.c: nvmet_etcd.h

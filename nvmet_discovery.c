@@ -3,7 +3,7 @@
 #include "nvmet_common.h"
 #include "nvmet_tcp.h"
 
-static int nvmf_discovery_genctr = 2;
+static int nvmf_discovery_genctr = 1;
 
 static int parse_etcd_kv(char *prefix, char *hostnqn,
 		struct nvmf_disc_rsp_page_entry *entry,
@@ -127,9 +127,30 @@ static int calc_num_recs(struct json_object *obj)
 	return numrec;
 }
 
+int nvmet_etcd_genctr(struct etcd_cdc_ctx *ctx)
+{
+	char key[1024];
+	int ret, genctr;
+	struct json_object *rev_obj;
+
+	sprintf(key, "%s/discovery/genctr", ctx->prefix);
+	ret = etcd_kv_revision(ctx, key);
+	if (ret < 0) {
+		fprintf(stderr, "etcd_kv_revision failed, error %d\n", ret);
+		return -1;
+	}
+	rev_obj = json_object_object_get(ctx->resp_obj, "revision");
+	if (!rev_obj) {
+		fprintf(stderr, "parse error, 'revision' not found\n");
+		return -1;
+	}
+	genctr = json_object_get_int(rev_obj);
+	return genctr;
+}
+
 u8 *nvmet_etcd_disc_log(struct etcd_cdc_ctx *ctx, char *hostnqn, size_t *len)
 {
-	int ret, num_recs = 0;
+	int ret, num_recs = 0, genctr;
 	struct nvmf_disc_rsp_page_hdr *hdr;
 	struct nvmf_disc_rsp_page_entry entry;
 	void *log_buf;
@@ -156,7 +177,10 @@ u8 *nvmet_etcd_disc_log(struct etcd_cdc_ctx *ctx, char *hostnqn, size_t *len)
 	memset(log_buf, 0, log_len);
 	hdr = (struct nvmf_disc_rsp_page_hdr *)log_buf;
 	hdr->recfmt = 1;
-	hdr->genctr = htole64(nvmf_discovery_genctr);
+	genctr = nvmet_etcd_genctr(ctx);
+	if (genctr < 0)
+		genctr = nvmf_discovery_genctr;
+	hdr->genctr = htole64(genctr);
 
 	log_ptr = log_buf;
 	log_ptr += sizeof(struct nvmf_disc_rsp_page_hdr);
