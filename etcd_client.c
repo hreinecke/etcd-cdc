@@ -902,7 +902,7 @@ int etcd_kv_value(struct etcd_cdc_ctx *ctx, char *key, char *value)
 
 	while (!json_object_iter_equal(&obj_iter, &obj_iter_end)) {
 		const char *name = json_object_iter_peek_name(&obj_iter);
-		if (strcmp(name, key)) {
+		if (!strcmp(name, key)) {
 			struct json_object *val_obj;
 
 			val_obj = json_object_iter_peek_value(&obj_iter);
