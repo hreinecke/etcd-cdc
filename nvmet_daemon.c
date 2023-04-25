@@ -130,6 +130,64 @@ static int get_iface(struct etcd_cdc_ctx *ctx, const char *ifname, int port)
 	return 0;
 }
 
+static int get_address(struct etcd_cdc_ctx *ctx, const char *arg)
+{
+	struct ifaddrs *ifaddrs, *ifa;
+	char *addr, *port_str, *eptr;
+	int port = discovery_port;
+
+	addr = strdup(arg);
+	port_str = strrchr(addr, ':');
+	if (port_str) {
+		*port_str = '\0';
+		port_str++;
+		port = strtoul(port_str, &eptr, 10);
+		if (port == 0 || port_str == eptr) {
+			fprintf(stderr, "Invalid address %s\n", arg);
+			return -1;
+		}
+	}
+
+	if (getifaddrs(&ifaddrs) == -1) {
+		perror("getifaddrs");
+		return -1;
+	}
+
+	for (ifa = ifaddrs; ifa != NULL; ifa = ifa->ifa_next) {
+		char host[NI_MAXHOST];
+		struct host_iface *iface;
+		int ret, addrlen;
+
+		if (ifa->ifa_addr == NULL)
+			continue;
+
+		if (ifa->ifa_addr->sa_family == AF_INET)
+			addrlen = sizeof(struct sockaddr_in);
+		else if (ifa->ifa_addr->sa_family == AF_INET6)
+			addrlen = sizeof(struct sockaddr_in6);
+		else
+			continue;
+
+		ret = getnameinfo(ifa->ifa_addr, addrlen,
+				  host, NI_MAXHOST, NULL, 0, NI_NUMERICHOST);
+		if (ret) {
+			fprintf(stderr, "getnameinfo failed, error %d\n", ret);
+			continue;
+		}
+		if (!strcmp(host, addr)) {
+			iface = new_host_iface(host, ifa->ifa_addr->sa_family,
+					       port);
+			if (iface) {
+				iface->ctx = ctx;
+				list_add_tail(&iface->node, &iface_linked_list);
+			}
+			break;
+		}
+        }
+	freeifaddrs(ifaddrs);
+	return 0;
+}
+
 void *run_host_interface(void *arg)
 {
 	struct host_iface *iface = arg;
@@ -209,12 +267,12 @@ static int parse_args(struct etcd_cdc_ctx *ctx, int argc, char *argv[])
 	int run_as_daemon;
 	char *eptr;
 	int port;
-	int iface_num = 0;
 	struct option getopt_arg[] = {
 		{"help", no_argument, 0, '?'},
 		{"daemon", no_argument, 0, 'd'},
 		{"discovery_nqn", required_argument, 0, 'n'},
 		{"discovery_port", required_argument, 0, 'p'},
+		{"address", required_argument, 0, 'a'},
 		{"interface", required_argument, 0, 'i'},
 		{"prefix", required_argument, 0, 'e'},
 		{"etcd_port", required_argument, 0, 'P'},
@@ -231,9 +289,16 @@ static int parse_args(struct etcd_cdc_ctx *ctx, int argc, char *argv[])
 	debug = 0;
 	run_as_daemon = 1;
 
-	while ((opt = getopt_long(argc, argv, "dn:p:i:e:P:H:St:v?",
+	while ((opt = getopt_long(argc, argv, "a:dn:p:i:e:P:H:St:v?",
 				  getopt_arg, &getopt_ind)) != -1) {
 		switch (opt) {
+		case 'a':
+			if (get_address(ctx, optarg) < 0) {
+				fprintf(stderr, "Invalid address '%s'\n",
+					optarg);
+				return 1;
+			}
+			break;
 		case 'd':
 			run_as_daemon= 1;
 			break;
@@ -256,7 +321,6 @@ static int parse_args(struct etcd_cdc_ctx *ctx, int argc, char *argv[])
 					optarg);
 				return 1;
 			}
-			iface_num++;
 			break;
 		case 'e':
 			ctx->prefix = optarg;
@@ -297,7 +361,6 @@ help:
 			fprintf(stderr, "Failed to initialize iface 'lo'\n");
 			return 1;
 		}
-		iface_num++;
 	}
 
 	if (list_empty(&iface_linked_list)) {
