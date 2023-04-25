@@ -37,7 +37,7 @@ void *endpoint_thread(void *arg)
 	int epollfd;
 	struct epoll_event ev;
 	sigset_t set;
-	int ret;
+	int ret, lease_countdown = RETRY_COUNT;
 
 	sigemptyset(&set);
 	sigaddset(&set, SIGPIPE);
@@ -59,7 +59,10 @@ void *endpoint_thread(void *arg)
 		ret = epoll_wait(epollfd, &ev, 1, ep->kato_interval);
 		if (ret == 0) {
 			/* epoll timeout, refresh lease */
-			ret = etcd_lease_keepalive(ep->ctx);
+			if (!--lease_countdown) {
+				ret = etcd_lease_keepalive(ep->ctx);
+				lease_countdown = RETRY_COUNT;
+			}
 			continue;
 		}
 
