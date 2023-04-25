@@ -17,6 +17,7 @@
 LIST_HEAD(iface_linked_list);
 
 char *discovery_nqn;
+int discovery_port = 8009;
 int stopped;
 int debug;
 static int signalled;
@@ -85,7 +86,7 @@ static struct host_iface *new_host_iface(const char *ifaddr,
 	return iface;
 }
 
-static int get_iface(struct etcd_cdc_ctx *ctx, const char *ifname)
+static int get_iface(struct etcd_cdc_ctx *ctx, const char *ifname, int port)
 {
 	struct ifaddrs *ifaddrs, *ifa;
 
@@ -119,7 +120,7 @@ static int get_iface(struct etcd_cdc_ctx *ctx, const char *ifname)
 			fprintf(stderr, "getnameinfo failed, error %d\n", ret);
 			continue;
 		}
-		iface = new_host_iface(host, ifa->ifa_addr->sa_family, 8009);
+		iface = new_host_iface(host, ifa->ifa_addr->sa_family, port);
 		if (iface) {
 			iface->ctx = ctx;
 			list_add_tail(&iface->node, &iface_linked_list);
@@ -192,26 +193,6 @@ void *run_host_interface(void *arg)
 	return NULL;
 }
 
-static int add_host_port(int port)
-{
-	int iface_num = 0;
-	LIST_HEAD(tmp_iface_list);
-	struct host_iface *iface, *new;
-
-	list_for_each_entry(iface, &iface_linked_list, node) {
-		if (iface->port_num == port)
-			continue;
-		new = new_host_iface(iface->address, iface->adrfam, port);
-		if (new) {
-			list_add_tail(&new->node, &tmp_iface_list);
-			iface_num++;
-		}
-	}
-
-	list_splice(&tmp_iface_list, &iface_linked_list);
-	return iface_num;
-}
-
 static void show_help(char *app, struct option args[])
 {
 	struct option *opt = args;
@@ -227,18 +208,18 @@ static int parse_args(struct etcd_cdc_ctx *ctx, int argc, char *argv[])
 	int opt;
 	int run_as_daemon;
 	char *eptr;
-	int port_num[16];
-	int port_max = 0, port, idx;
+	int port;
 	int iface_num = 0;
 	struct option getopt_arg[] = {
 		{"help", no_argument, 0, '?'},
-		{"discovery_nqn", required_argument, 0, 'd'},
-		{"standalone", no_argument, 0, 'S'},
+		{"daemon", no_argument, 0, 'd'},
+		{"discovery_nqn", required_argument, 0, 'n'},
+		{"discovery_port", required_argument, 0, 'p'},
 		{"interface", required_argument, 0, 'i'},
 		{"prefix", required_argument, 0, 'e'},
-		{"etcd_port", required_argument, 0, 'p'},
-		{"etcd_host", required_argument, 0, 'h'},
-		{"etcd_ssl", no_argument, 0, 's'},
+		{"etcd_port", required_argument, 0, 'P'},
+		{"etcd_host", required_argument, 0, 'H'},
+		{"etcd_ssl", no_argument, 0, 'S'},
 		{"ttl", required_argument, 0, 't'},
 		{"verbose", no_argument, 0, 'v'},
 		{NULL, 0, 0, 0},
@@ -246,45 +227,50 @@ static int parse_args(struct etcd_cdc_ctx *ctx, int argc, char *argv[])
 	int getopt_ind;
 
 	discovery_nqn = NULL;
+	discovery_port = 8009;
 	debug = 0;
 	run_as_daemon = 1;
 
-	while ((opt = getopt_long(argc, argv, "d:Si:e:p:h:st:v?",
+	while ((opt = getopt_long(argc, argv, "dn:p:i:e:P:H:St:v?",
 				  getopt_arg, &getopt_ind)) != -1) {
 		switch (opt) {
 		case 'd':
+			run_as_daemon= 1;
+			break;
+		case 'n':
 			discovery_nqn = optarg;
 			break;
-		case 'S':
-			run_as_daemon = 0;
-			break;
-		case 'e':
-			ctx->prefix = optarg;
+		case 'p':
+			errno = 0;
+			port = strtoul(optarg, &eptr, 10);
+			if (errno || port == 0 || optarg == eptr) {
+				fprintf(stderr, "Invalid port number '%s'\n",
+					optarg);
+				return 1;
+			}
+			discovery_port = port;
 			break;
 		case 'i':
-			if (get_iface(ctx, optarg) < 0) {
+			if (get_iface(ctx, optarg, discovery_port) < 0) {
 				fprintf(stderr, "Invalid interface %s\n",
 					optarg);
 				return 1;
 			}
 			iface_num++;
 			break;
-		case 'p':
-			errno = 0;
-			if (port_max >= 16) {
-				fprintf(stderr,
-					"Too many port numbers specified\n");
-				return 1;
-			}
+		case 'e':
+			ctx->prefix = optarg;
+			break;
+		case 'P':
 			port = strtoul(optarg, &eptr, 10);
-			if (errno || port == 0 || port > LONG_MAX) {
+			if (errno || port == 0 || optarg == eptr) {
 				fprintf(stderr, "Invalid port number '%s'\n",
 					optarg);
 				return 1;
 			}
 			ctx->port = port;
 			break;
-		case 's':
+		case 'S':
 			ctx->proto = "https";
 			break;
 		case 't':
@@ -307,15 +293,12 @@ help:
 	}
 
 	if (list_empty(&iface_linked_list)) {
-		if (get_iface(ctx, "lo") < 0) {
+		if (get_iface(ctx, "lo", discovery_port) < 0) {
 			fprintf(stderr, "Failed to initialize iface 'lo'\n");
 			return 1;
 		}
 		iface_num++;
 	}
-
-	for (idx = 0; idx < port_max; idx++)
-		add_host_port(port_num[idx]);
 
 	if (list_empty(&iface_linked_list)) {
 		fprintf(stderr, "invalid host interface configuration\n");
@@ -364,6 +347,11 @@ int main(int argc, char *argv[])
 		return ret;
 	}
 
+	ret = etcd_lease_grant(ctx);
+	if (ret < 0) {
+		etcd_exit(ctx);
+		return ret;
+	}
 	signalled = stopped = 0;
 
 	list_for_each_entry(iface, &iface_linked_list, node) {
@@ -382,6 +370,7 @@ int main(int argc, char *argv[])
 	}
 
 	free_interfaces();
+	etcd_lease_revoke(ctx);
 	etcd_exit(ctx);
 	return ret;
 }
