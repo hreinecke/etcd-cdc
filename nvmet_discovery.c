@@ -133,7 +133,8 @@ int nvmet_etcd_genctr(struct etcd_cdc_ctx *ctx)
 	int ret, genctr;
 	struct json_object *rev_obj;
 
-	sprintf(key, "%s/discovery/genctr", ctx->prefix);
+	sprintf(key, "%s/%s/genctr",
+		ctx->prefix, NVME_DISC_SUBSYS_NAME);
 	ret = etcd_kv_revision(ctx, key);
 	if (ret < 0) {
 		fprintf(stderr, "etcd_kv_revision failed, error %d\n", ret);

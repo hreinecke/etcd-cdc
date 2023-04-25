@@ -34,7 +34,7 @@
 #include <sys/inotify.h>
 
 #include "list.h"
-
+#include "nvmet_common.h"
 #include "nvmet_etcd.h"
 
 static int inotify_genctr;
@@ -138,7 +138,8 @@ void set_genctr(struct etcd_cdc_ctx *ctx, int genctr)
 	char key[1024];
 	char value[1024];
 
-	sprintf(key, "%s/discovery/genctr", ctx->prefix);
+	sprintf(key, "%s/%s/genctr",
+		ctx->prefix, NVME_DISC_SUBSYS_NAME);
 	sprintf(value, "%d", genctr);
 
 	if (etcd_kv_put(ctx, key, value) < 0) {

@@ -96,8 +96,15 @@ static int register_host_iface(struct host_iface *iface)
 {
 	char key[1024], value[1024];
 
-	sprintf(key, "%s/ports/%s:%d", iface->ctx->prefix,
-		iface->address, iface->port_num);
+	if (iface->adrfam == AF_INET) {
+		sprintf(key, "%s/%s/%s:%d", iface->ctx->prefix,
+			NVME_DISC_SUBSYS_NAME,
+			iface->address, iface->port_num);
+	} else {
+		sprintf(key, "%s/%s/[%s]:%d", iface->ctx->prefix,
+			NVME_DISC_SUBSYS_NAME,
+			iface->address, iface->port_num);
+	}
 	sprintf(value, "trtype=tcp,traddr=%s,trsvcid=%d,adrfam=%s",
 		iface->address,iface->port_num,
 		iface->adrfam == AF_INET ? "ipv4" : "ipv6");
@@ -430,18 +437,18 @@ int main(int argc, char *argv[])
 	if (!ctx)
 		return 1;
 
-	ret = parse_args(ctx, argc, argv);
-	if (ret) {
-		etcd_exit(ctx);
-		return ret;
-	}
-
 	ret = etcd_lease_grant(ctx);
 	if (ret < 0) {
 		etcd_exit(ctx);
 		return ret;
 	}
 	signalled = stopped = 0;
+
+	ret = parse_args(ctx, argc, argv);
+	if (ret) {
+		etcd_exit(ctx);
+		return ret;
+	}
 
 	list_for_each_entry(iface, &iface_linked_list, node) {
 		pthread_attr_t pthread_attr;
