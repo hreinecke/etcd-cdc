@@ -7,7 +7,7 @@ static int nvmf_discovery_genctr = 1;
 
 static int parse_etcd_kv(char *prefix, char *hostnqn,
 		struct nvmf_disc_rsp_page_entry *entry,
-		char *key, const char *value)
+		const char *key, const char *value)
 {
 	char *key_parse, *key_save, *k, *eptr;
 	char *addr, *a, *addr_save;
@@ -162,19 +162,26 @@ int nvmet_etcd_genctr(struct etcd_cdc_ctx *ctx)
 	return genctr;
 }
 
-u8 *nvmet_etcd_disc_log(struct etcd_cdc_ctx *ctx, char *hostnqn, size_t *len)
+void *disc_log_entries(struct etcd_cdc_ctx *ctx, char *hostnqn,
+		       int port_id_offset, int *num_recs)
 {
-	int ret, num_recs = 0, genctr;
-	struct nvmf_disc_rsp_page_hdr *hdr;
+	char prefix[256];
 	struct nvmf_disc_rsp_page_entry entry;
+	struct json_object_iterator obj_iter, obj_iter_end;
 	void *log_buf;
-	unsigned char *log_ptr;
+	u8 *log_ptr;
 	size_t log_len;
+	int ret, entries = 0;
 
 	if (!ctx->resp_obj)
 		ctx->resp_obj = json_object_new_object();
 
-	ret = etcd_kv_range(ctx, ctx->prefix);
+	if (hostnqn) {
+		sprintf(prefix, "%s/%s", ctx->prefix, hostnqn);
+	} else {
+		sprintf(prefix, "%s", ctx->prefix);
+	}
+	ret = etcd_kv_range(ctx, prefix);
 	if (ret) {
 		fprintf(stderr, "etcd_kv_range failed, error %d\n", ret);
 		return NULL;
@@ -183,8 +190,68 @@ u8 *nvmet_etcd_disc_log(struct etcd_cdc_ctx *ctx, char *hostnqn, size_t *len)
 		printf("keylist:\n%s\n",
 		       json_object_to_json_string_ext(ctx->resp_obj,
 					JSON_C_TO_STRING_PRETTY));
-	num_recs = calc_num_recs(ctx->resp_obj);
-	printf("Found %u records\n", num_recs);
+	entries = calc_num_recs(ctx->resp_obj);
+	printf("Found %u records\n", entries);
+	log_len = entries * sizeof(entry);
+	log_buf = malloc(log_len);
+	memset(log_buf, 0, log_len);
+	log_ptr = log_buf;
+	entries = 0;
+
+	obj_iter = json_object_iter_begin(ctx->resp_obj);
+	obj_iter_end = json_object_iter_end(ctx->resp_obj);
+
+	while (!json_object_iter_equal(&obj_iter, &obj_iter_end)) {
+		const char *key;
+		struct json_object *val_obj;
+
+		key = json_object_iter_peek_name(&obj_iter);
+		val_obj = json_object_iter_peek_value(&obj_iter);
+		if (!json_object_is_type(val_obj, json_type_string)) {
+			json_object_iter_next(&obj_iter);
+			continue;
+		}
+		memset(&entry, 0, sizeof(entry));
+		if (parse_etcd_kv(ctx->prefix, hostnqn,
+				  &entry, key,
+				  json_object_get_string(val_obj)) < 0) {
+			json_object_iter_next(&obj_iter);
+			continue;
+		}
+		entry.portid = entries + port_id_offset;
+		entries++;
+		memcpy(log_ptr, &entry, sizeof(entry));
+		log_ptr += sizeof(entry);
+		json_object_iter_next(&obj_iter);
+	}
+	json_object_put(ctx->resp_obj);
+	ctx->resp_obj = NULL;
+
+	*num_recs = entries;
+	return log_buf;
+}
+
+u8 *nvmet_etcd_disc_log(struct etcd_cdc_ctx *ctx, char *hostnqn, size_t *len)
+{
+	int genctr;
+	int num_host_entries = 0, num_wildcard_entries = 0, num_recs;
+	struct nvmf_disc_rsp_page_hdr *hdr;
+	struct nvmf_disc_rsp_page_entry entry;
+	void *host_entries, *wildcard_entries, *log_buf;
+	unsigned char *log_ptr;
+	size_t log_len, entry_len;
+
+	num_recs = 0;
+	host_entries = disc_log_entries(ctx, hostnqn, num_recs,
+					&num_host_entries);
+	printf("Found %u host records\n", num_host_entries);
+
+	num_recs += num_host_entries;
+	wildcard_entries = disc_log_entries(ctx, NULL, num_recs,
+					    &num_wildcard_entries);
+	printf("Found %u wildcard records\n", num_wildcard_entries);
+	num_recs += num_wildcard_entries;
+
 	log_len = sizeof(struct nvmf_disc_rsp_page_hdr) +
 		(num_recs * sizeof(entry));
 	log_buf = malloc(log_len);
@@ -195,28 +262,24 @@ u8 *nvmet_etcd_disc_log(struct etcd_cdc_ctx *ctx, char *hostnqn, size_t *len)
 	if (genctr < 0)
 		genctr = nvmf_discovery_genctr;
 	hdr->genctr = htole64(genctr);
+	hdr->numrec = htole64(num_recs);
 
 	log_ptr = log_buf;
 	log_ptr += sizeof(struct nvmf_disc_rsp_page_hdr);
-	log_len = sizeof(struct nvmf_disc_rsp_page_hdr);
 
-	num_recs = 0;
-	json_object_object_foreach(ctx->resp_obj, key, val_obj) {
-		if (!json_object_is_type(val_obj, json_type_string))
-			continue;
-		memset(&entry, 0, sizeof(entry));
-		if (parse_etcd_kv(ctx->prefix, hostnqn,
-				  &entry, key,
-				  json_object_get_string(val_obj)) < 0)
-			continue;
-		num_recs++;
-		memcpy(log_ptr, &entry, sizeof(entry));
-		log_ptr += sizeof(entry);
-		log_len += sizeof(entry);
+	if (num_host_entries) {
+		entry_len = sizeof(entry) * num_host_entries;
+		memcpy(log_ptr, host_entries, entry_len);
+		log_ptr += entry_len;
+		free(host_entries);
+	}
+	if (num_wildcard_entries) {
+		entry_len = sizeof(entry) * num_wildcard_entries;
+		memcpy(log_ptr, wildcard_entries, entry_len);
+		log_ptr += entry_len;
+		free(wildcard_entries);
 	}
 
-	ctx->resp_obj = NULL;
-	hdr->numrec = htole64(num_recs);
 	*len = log_len;
 	return log_buf;
 }
