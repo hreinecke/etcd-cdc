@@ -35,13 +35,11 @@ static int parse_etcd_kv(char *prefix, char *hostnqn,
 		free(key_parse);
 		return -EINVAL;
 	}
-#if 0
-	if (strlen(k) && strcmp(hostnqn, k)) {
+	if (hostnqn && strlen(k) && strcmp(hostnqn, k)) {
 		fprintf(stderr, "Skip invalid hostnqn host '%s'\n", k);
 		free(key_parse);
 		return -EINVAL;
 	}
-#endif
 	k = strtok_r(NULL, "/", &key_save);
 	if (!k || !strlen(k)) {
 		fprintf(stderr, "parse error (subnqn) on key '%s'\n", key);

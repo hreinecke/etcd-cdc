@@ -34,7 +34,6 @@
 #include <sys/inotify.h>
 
 #include "list.h"
-#include "nvmet_common.h"
 #include "nvmet_etcd.h"
 
 static int inotify_genctr;
@@ -132,22 +131,6 @@ static struct nvmet_port_subsys *find_subsys_from_host(char *subsys_host_dir)
 		return port_subsys;
 	}
 	return NULL;
-}
-
-void set_genctr(struct etcd_cdc_ctx *ctx, int genctr)
-{
-	char key[1024];
-	char value[1024];
-
-	sprintf(key, "%s/%s/genctr",
-		ctx->prefix, NVME_DISC_SUBSYS_NAME);
-	sprintf(value, "%d", genctr);
-
-	if (etcd_kv_put(ctx, key, value, false) < 0) {
-		fprintf(stderr, "cannot add key %s, error %d\n",
-			key, errno);
-	}
-	printf("Updated key %s: %s\n", key, value);
 }
 
 static void gen_host_kv_key(struct etcd_cdc_ctx *ctx,
