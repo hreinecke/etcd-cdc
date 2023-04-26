@@ -40,8 +40,8 @@ extern struct list_head		interfaces;
 
 #define PAGE_SIZE		4096
 
-#define KATO_INTERVAL	500	/* in ms as per spec */
-#define RETRY_COUNT	1200	/* 2 min; value is multiplied with kato interval */
+#define KATO_INTERVAL	1000	/* in ms as per spec */
+#define RETRY_COUNT	120	/* 2 min; value is multiplied with kato interval */
 
 
 #define ADRFAM_STR_IPV4 "ipv4"

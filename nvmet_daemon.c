@@ -435,6 +435,7 @@ int main(int argc, char *argv[])
 	if (!ctx)
 		return 1;
 
+	ctx->ttl = RETRY_COUNT;
 	signalled = stopped = 0;
 
 	ret = parse_args(ctx, argc, argv);

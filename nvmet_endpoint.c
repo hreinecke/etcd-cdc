@@ -158,12 +158,12 @@ struct endpoint *enqueue_endpoint(int id, struct host_iface *iface)
 	memset(ep, 0, sizeof(struct endpoint));
 
 	ep->iface = iface;
-	ep->kato_countdown = RETRY_COUNT;
+	ep->ctx = etcd_dup(iface->ctx);
+	ep->kato_countdown = ep->ctx->ttl;
 	ep->kato_interval = KATO_INTERVAL;
 	ep->maxh2cdata = 0x10000;
 	ep->qid = -1;
 	ep->recv_state = RECV_PDU;
-	ep->ctx = etcd_dup(iface->ctx);
 
 	ret = run_endpoint(ep, id);
 	if (ret) {
