@@ -231,6 +231,7 @@ void *run_host_interface(void *arg)
 
 	sigemptyset(&set);
 	sigaddset(&set, SIGPIPE);
+	sigaddset(&set, SIGINT);
 	sigaddset(&set, SIGTERM);
 	pthread_sigmask(SIG_BLOCK, &set, NULL);
 
@@ -408,6 +409,20 @@ help:
 	}
 
 	return 0;
+}
+
+void terminate_interfaces(struct host_iface *iface, int signo)
+{
+	struct host_iface *_iface;
+
+	stopped = true;
+	list_for_each_entry(_iface, &iface_linked_list, node) {
+		if (_iface != iface)
+			continue;
+		fprintf(stderr, "iface %d: terminating\n",
+			_iface->portid);
+		pthread_kill(iface->pthread, signo);
+	}
 }
 
 void free_interfaces(void)

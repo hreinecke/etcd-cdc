@@ -3,8 +3,9 @@
 #include <stddef.h>
 #include <fcntl.h>
 #include <sys/socket.h>
-#include <netinet/in.h>
 #include <sys/epoll.h>
+#include <sys/signalfd.h>
+#include <netinet/in.h>
 
 #include "types.h"
 #include "nvme.h"
@@ -322,27 +323,48 @@ out_free:
 int tcp_wait_for_connection(struct host_iface *iface, int timeout_ms)
 {
 	int epollfd;
-	struct epoll_event ev;
-	int sockfd;
-	int ret = -ESHUTDOWN;
+	struct epoll_event ev[2];
+	int sockfd, sigfd;
+	int ret = -ESHUTDOWN, n;
+	sigset_t sigmask;
 
-	epollfd = epoll_create(1);
+	epollfd = epoll_create(2);
 	if (epollfd < 0) {
 		fprintf(stderr, "iface %d: epoll create error %d\n",
 			iface->portid, errno);
 		return -errno;
 	}
 
-	ev.events = EPOLLIN;
-	ev.data.fd = iface->listenfd;
-	if (epoll_ctl(epollfd, EPOLL_CTL_ADD, iface->listenfd, &ev) == -1) {
-		fprintf(stderr, "iface %d: failed to add epoll fd, error %d\n",
+	ev[0].events = EPOLLIN;
+	ev[0].data.fd = iface->listenfd;
+	if (epoll_ctl(epollfd, EPOLL_CTL_ADD, iface->listenfd, &ev[0]) == -1) {
+		fprintf(stderr, "iface %d: failed to add listen fd, error %d\n",
 			iface->portid, errno);
 		close(epollfd);
 		return -errno;
 	}
+	sigemptyset(&sigmask);
+	sigaddset(&sigmask, SIGINT);
+	sigaddset(&sigmask, SIGTERM);
+	sigfd = signalfd(-1, &sigmask, 0);
+	if (sigfd < 0) {
+		fprintf(stderr, "iface %d: signalfd error %d\n",
+			iface->portid, errno);
+		close(epollfd);
+		return -errno;
+	}
+	ev[1].events = EPOLLIN;
+	ev[1].data.fd = sigfd;
+	if (epoll_ctl(epollfd, EPOLL_CTL_ADD, sigfd, &ev[1]) == -1) {
+		fprintf(stderr, "iface %d: failed to add signalfd, error %d\n",
+			iface->portid, errno);
+		close(sigfd);
+		close(epollfd);
+		return -errno;
+	}
+
 	while (!stopped) {
-		ret = epoll_wait(epollfd, &ev, 1, timeout_ms);
+		ret = epoll_wait(epollfd, ev, 2, timeout_ms);
 		if (ret < 0) {
 			fprintf(stderr, "iface %d: epoll_wait error %d\n",
 				iface->portid, errno);
@@ -351,18 +373,41 @@ int tcp_wait_for_connection(struct host_iface *iface, int timeout_ms)
 		}
 		if (ret > 0)
 			break;
+
 		/* epoll timeout, refresh lease */
 		ret = etcd_lease_keepalive(iface->ctx);
 		if (ret < 0) {
-			fprintf(stderr, "iface %d: lease keepalive error %d\n",
+			fprintf(stderr,
+				"iface %d: lease keepalive error %d\n",
 				iface->portid, ret);
 			break;
 		}
 	}
-	if (stopped) {
-		ret = -EAGAIN;
-		goto out_close;
+	for (n = 0; n < ret; n++) {
+		if (ev[n].data.fd == sigfd) {
+			struct signalfd_siginfo fdsi;
+			size_t rlen;
+
+			rlen = read(sigfd, &fdsi, sizeof(fdsi));
+			if (rlen != sizeof(fdsi)) {
+				fprintf(stderr,
+					"iface %d: signalfd error\n",
+					iface->portid);
+				ret = -ENOMSG;
+			}
+			fprintf(stderr,
+				"iface %d: signal %d received, terminating\n",
+				iface->portid, fdsi.ssi_signo);
+			terminate_interfaces(iface, fdsi.ssi_signo);
+			ret = -EAGAIN;
+			break;
+		}
 	}
+	close(sigfd);
+
+	if (ret < 0)
+		goto out_close;
+
 	if (ret > 0) {
 		sockfd = accept(iface->listenfd, (struct sockaddr *) NULL,
 				NULL);
