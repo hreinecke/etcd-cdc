@@ -417,7 +417,7 @@ void terminate_interfaces(struct host_iface *iface, int signo)
 
 	stopped = true;
 	list_for_each_entry(_iface, &iface_linked_list, node) {
-		if (_iface != iface)
+		if (_iface == iface)
 			continue;
 		fprintf(stderr, "iface %d: terminating\n",
 			_iface->portid);

@@ -364,7 +364,7 @@ int tcp_wait_for_connection(struct host_iface *iface, int timeout_ms)
 	}
 
 	while (!stopped) {
-		ret = epoll_wait(epollfd, ev, 2, timeout_ms);
+		ret = epoll_pwait(epollfd, ev, 2, timeout_ms, &sigmask);
 		if (ret < 0) {
 			fprintf(stderr, "iface %d: epoll_wait error %d\n",
 				iface->portid, errno);
@@ -399,7 +399,7 @@ int tcp_wait_for_connection(struct host_iface *iface, int timeout_ms)
 				"iface %d: signal %d received, terminating\n",
 				iface->portid, fdsi.ssi_signo);
 			terminate_interfaces(iface, fdsi.ssi_signo);
-			ret = -EAGAIN;
+			ret = -EINTR;
 			break;
 		}
 	}
