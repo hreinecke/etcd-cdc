@@ -157,6 +157,9 @@ int nvmet_etcd_genctr(struct etcd_cdc_ctx *ctx)
 		return -1;
 	}
 	genctr = json_object_get_int(rev_obj);
+	json_object_put(ctx->resp_obj);
+	ctx->resp_obj = NULL;
+
 	return genctr;
 }
 
@@ -171,9 +174,6 @@ void *disc_log_entries(struct etcd_cdc_ctx *ctx, char *hostnqn,
 	size_t log_len;
 	int ret, entries = 0;
 
-	if (!ctx->resp_obj)
-		ctx->resp_obj = json_object_new_object();
-
 	if (hostnqn) {
 		sprintf(prefix, "%s/%s", ctx->prefix, hostnqn);
 	} else {
@@ -182,6 +182,8 @@ void *disc_log_entries(struct etcd_cdc_ctx *ctx, char *hostnqn,
 	ret = etcd_kv_range(ctx, prefix);
 	if (ret) {
 		fprintf(stderr, "etcd_kv_range failed, error %d\n", ret);
+		json_object_put(ctx->resp_obj);
+		ctx->resp_obj = NULL;
 		return NULL;
 	}
 	if (ctx->debug)

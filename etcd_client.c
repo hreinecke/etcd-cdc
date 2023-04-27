@@ -79,7 +79,6 @@ struct etcd_cdc_ctx *etcd_init(void)
 	ctx->port = default_etcd_port;
 	ctx->lease = -1;
 	ctx->ttl = 30;
-	ctx->resp_obj = json_object_new_object();
 
 	return ctx;
 }
@@ -101,7 +100,6 @@ struct etcd_cdc_ctx *etcd_dup(struct etcd_cdc_ctx *ctx)
 	new_ctx->lease = -1;
 	new_ctx->ttl = ctx->ttl;
 	new_ctx->debug = ctx->debug;
-	new_ctx->resp_obj = json_object_new_object();
 
 	return new_ctx;
 }
@@ -298,6 +296,7 @@ int etcd_kv_put(struct etcd_cdc_ctx *ctx, char *key, char *value, bool lease)
 	sprintf(url, "%s://%s:%u/v3/kv/put",
 		ctx->proto, ctx->host, ctx->port);
 
+	ctx->resp_obj = json_object_new_object();
 	post_obj = json_object_new_object();
 	encoded_key = __b64enc(key, strlen(key));
 	json_object_object_add(post_obj, "key",
@@ -342,6 +341,7 @@ int etcd_kv_get(struct etcd_cdc_ctx *ctx, char *key)
 	sprintf(url, "%s://%s:%u/v3/kv/range",
 		ctx->proto, ctx->host, ctx->port);
 
+	ctx->resp_obj = json_object_new_object();
 	ctx->tokener = json_tokener_new_ex(5);
 	post_obj = json_object_new_object();
 	encoded_key = __b64enc(key, strlen(key));
@@ -380,6 +380,7 @@ int etcd_kv_range(struct etcd_cdc_ctx *ctx, char *key)
 	char *encoded_range = NULL;
 	int ret;
 
+	ctx->resp_obj = json_object_new_object();
 	sprintf(url, "%s://%s:%u/v3/kv/range",
 		ctx->proto, ctx->host, ctx->port);
 
@@ -479,6 +480,7 @@ int etcd_kv_revision(struct etcd_cdc_ctx *ctx, char *key)
 	sprintf(url, "%s://%s:%u/v3/kv/range",
 		ctx->proto, ctx->host, ctx->port);
 
+	ctx->resp_obj = json_object_new_object();
 	ctx->tokener = json_tokener_new_ex(5);
 	post_obj = json_object_new_object();
 	encoded_key = __b64enc(key, strlen(key));
@@ -512,6 +514,8 @@ int etcd_kv_revision(struct etcd_cdc_ctx *ctx, char *key)
 	json_object_put(post_obj);
 	free(encoded_key);
 	json_tokener_free(ctx->tokener);
+	json_object_put(ctx->resp_obj);
+	ctx->resp_obj = NULL;
 	return ret;
 }
 
@@ -566,6 +570,7 @@ int etcd_kv_delete(struct etcd_cdc_ctx *ctx, char *key)
 	sprintf(url, "%s://%s:%u/v3/kv/deleterange",
 		ctx->proto, ctx->host, ctx->port);
 
+	ctx->resp_obj = json_object_new_object();
 	post_obj = json_object_new_object();
 	encoded_key = __b64enc(key, strlen(key));
 	json_object_object_add(post_obj, "key",
@@ -590,6 +595,8 @@ int etcd_kv_delete(struct etcd_cdc_ctx *ctx, char *key)
 	}
 	free(encoded_key);
 	json_object_put(post_obj);
+	json_object_put(ctx->resp_obj);
+	ctx->resp_obj = NULL;
 	return ret;
 }
 
@@ -680,6 +687,7 @@ int etcd_kv_watch(struct etcd_cdc_ctx *ctx, char *key)
 	sprintf(url, "%s://%s:%u/v3/watch",
 		ctx->proto, ctx->host, ctx->port);
 
+	ctx->resp_obj = json_object_new_object();
 	ctx->tokener = json_tokener_new_ex(10);
 	post_obj = json_object_new_object();
 	req_obj = json_object_new_object();
@@ -711,6 +719,8 @@ int etcd_kv_watch(struct etcd_cdc_ctx *ctx, char *key)
 	free(encoded_key);
 	free(encoded_range);
 	json_object_put(post_obj);
+	json_object_put(ctx->resp_obj);
+	ctx->resp_obj = NULL;
 	return ret;
 }
 
@@ -784,6 +794,7 @@ int etcd_lease_grant(struct etcd_cdc_ctx *ctx)
 	sprintf(url, "%s://%s:%u/v3/lease/grant",
 		ctx->proto, ctx->host, ctx->port);
 
+	ctx->resp_obj = json_object_new_object();
 	post_obj = json_object_new_object();
 	json_object_object_add(post_obj, "ID",
 			       json_object_new_int64(0));
@@ -817,6 +828,8 @@ int etcd_lease_grant(struct etcd_cdc_ctx *ctx)
 
 	}
 	json_object_put(post_obj);
+	json_object_put(ctx->resp_obj);
+	ctx->resp_obj = NULL;
 	return ret;
 }
 
@@ -886,6 +899,7 @@ int etcd_lease_keepalive(struct etcd_cdc_ctx *ctx)
 	sprintf(url, "%s://%s:%u/v3/lease/keepalive",
 		ctx->proto, ctx->host, ctx->port);
 
+	ctx->resp_obj = json_object_new_object();
 	post_obj = json_object_new_object();
 	json_object_object_add(post_obj, "ID",
 			       json_object_new_int64(ctx->lease));
@@ -915,6 +929,8 @@ int etcd_lease_keepalive(struct etcd_cdc_ctx *ctx)
 		}
 	}
 	json_object_put(post_obj);
+	json_object_put(ctx->resp_obj);
+	ctx->resp_obj = NULL;
 	return ret;
 }
 
@@ -927,6 +943,7 @@ int etcd_lease_timetolive(struct etcd_cdc_ctx *ctx)
 	sprintf(url, "%s://%s:%u/v3/lease/timetolive",
 		ctx->proto, ctx->host, ctx->port);
 
+	ctx->resp_obj = json_object_new_object();
 	post_obj = json_object_new_object();
 	json_object_object_add(post_obj, "ID",
 			       json_object_new_int64(ctx->lease));
@@ -955,6 +972,8 @@ int etcd_lease_timetolive(struct etcd_cdc_ctx *ctx)
 	}
 
 	json_object_put(post_obj);
+	json_object_put(ctx->resp_obj);
+	ctx->resp_obj = NULL;
 	return ret;
 }
 
@@ -967,6 +986,7 @@ int etcd_lease_revoke(struct etcd_cdc_ctx *ctx)
 	sprintf(url, "%s://%s:%u/v3/lease/revoke",
 		ctx->proto, ctx->host, ctx->port);
 
+	ctx->resp_obj = json_object_new_object();
 	post_obj = json_object_new_object();
 	json_object_object_add(post_obj, "ID",
 			       json_object_new_int64(ctx->lease));
@@ -989,5 +1009,7 @@ int etcd_lease_revoke(struct etcd_cdc_ctx *ctx)
 		}
 	}
 	json_object_put(post_obj);
+	json_object_put(ctx->resp_obj);
+	ctx->resp_obj = NULL;
 	return ret;
 }
