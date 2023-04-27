@@ -20,6 +20,7 @@ char *discovery_nqn;
 int discovery_port = 8009;
 int stopped;
 int debug;
+int tcp_debug;
 static int signalled;
 static int portid;
 
@@ -373,6 +374,8 @@ static int parse_args(struct etcd_cdc_ctx *ctx, int argc, char *argv[])
 			break;
 		case 'v':
 			ctx->debug++;
+			if (ctx->debug > 1)
+			    tcp_debug = 1;
 			break;
 		case '?':
 		default:

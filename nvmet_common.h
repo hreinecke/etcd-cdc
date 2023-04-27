@@ -139,6 +139,7 @@ struct host_iface {
 	size_t tls_key_len;
 };
 
+extern int tcp_debug;
 extern char *discovery_nqn;
 extern struct list_head subsys_linked_list;
 extern struct list_head iface_linked_list;
