@@ -364,14 +364,15 @@ struct json_object *etcd_kv_get(struct etcd_cdc_ctx *ctx, char *key)
 			errno = json_object_get_int(err_obj);
 			ret = -1;
 		}
-		json_object_put(ctx->resp_obj);
-		ctx->resp_obj = NULL;
 	}
 
 	json_object_put(post_obj);
 	free(encoded_key);
 	json_tokener_free(ctx->tokener);
-	resp = ctx->resp_obj;
+	if (ret < 0)
+		json_object_put(ctx->resp_obj);
+	else
+		resp = ctx->resp_obj;
 	ctx->resp_obj = NULL;
 	return resp;
 }
@@ -413,15 +414,16 @@ struct json_object *etcd_kv_range(struct etcd_cdc_ctx *ctx, char *key)
 			errno = json_object_get_int(err_obj);
 			ret = -1;
 		}
-		json_object_put(ctx->resp_obj);
-		ctx->resp_obj = NULL;
 	}
 
 	free(encoded_range);
 	free(encoded_key);
 	json_object_put(post_obj);
 	json_tokener_free(ctx->tokener);
-	resp = ctx->resp_obj;
+	if (ret < 0)
+		json_object_put(ctx->resp_obj);
+	else
+		resp = ctx->resp_obj;
 	ctx->resp_obj = NULL;
 	return resp;
 }
@@ -512,13 +514,16 @@ int etcd_kv_revision(struct etcd_cdc_ctx *ctx, char *key)
 			ret = -1;
 		}
 	}
-	rev_obj = json_object_object_get(ctx->resp_obj, "revision");
-	if (!rev_obj) {
-		fprintf(stderr, "invalid response, 'revision' not found\n");
-		errno = -ENOKEY;
-		ret = -1;
-	} else {
-		ret = json_object_get_int(rev_obj);
+	if (!ret) {
+		rev_obj = json_object_object_get(ctx->resp_obj, "revision");
+		if (!rev_obj) {
+			fprintf(stderr,
+				"invalid response, 'revision' not found\n");
+			errno = -ENOKEY;
+			ret = -1;
+		} else {
+			ret = json_object_get_int(rev_obj);
+		}
 	}
 	json_object_put(post_obj);
 	free(encoded_key);
