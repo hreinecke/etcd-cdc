@@ -53,6 +53,7 @@ int main(int argc, char **argv)
 	enum kv_key_op op = KV_KEY_OP_RANGE;
 	char *key = default_prefix;
 	char *value = NULL;
+	struct json_object *resp;
 	int ret;
 
 	ctx = malloc(sizeof(struct etcd_cdc_ctx));
@@ -112,16 +113,14 @@ int main(int argc, char **argv)
 			fprintf(stderr, "excess arguments for 'get'\n");
 			exit(1);
 		}
-		ctx->resp_obj = json_object_new_object();
-		ret = etcd_kv_get(ctx, key);
-		if (!ret) {
+		resp = etcd_kv_get(ctx, key);
+		if (resp) {
 			json_object_object_foreach(ctx->resp_obj,
 						   key_obj, val_obj)
 				printf("%s: %s\n", key_obj,
 				       json_object_get_string(val_obj));
+			json_object_put(resp);
 		}
-		json_object_put(ctx->resp_obj);
-		ctx->resp_obj = NULL;
 		break;
 	}
 	case KV_KEY_OP_ADD:
@@ -143,15 +142,15 @@ int main(int argc, char **argv)
 			fprintf(stderr, "excess arguments for 'range'\n");
 			exit(1);
 		}
-		ctx->resp_obj = json_object_new_object();
-		ret = etcd_kv_range(ctx, key);
-		if (!ret) {
-			json_object_object_foreach(ctx->resp_obj,
+
+		resp = etcd_kv_range(ctx, key);
+		if (resp) {
+			json_object_object_foreach(resp,
 						   key_obj, val_obj)
 				printf("%s: %s\n", key_obj,
 				       json_object_get_string(val_obj));
+			json_object_put(resp);
 		}
-		json_object_put(ctx->resp_obj);
 		break;
 	}
 	case KV_KEY_OP_DELETE:

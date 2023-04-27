@@ -331,10 +331,10 @@ int etcd_kv_put(struct etcd_cdc_ctx *ctx, char *key, char *value, bool lease)
 	return ret;
 }
 
-int etcd_kv_get(struct etcd_cdc_ctx *ctx, char *key)
+struct json_object *etcd_kv_get(struct etcd_cdc_ctx *ctx, char *key)
 {
 	char url[1024];
-	struct json_object *post_obj = NULL;
+	struct json_object *post_obj = NULL, *resp;
 	char *encoded_key = NULL;
 	int ret;
 
@@ -364,18 +364,22 @@ int etcd_kv_get(struct etcd_cdc_ctx *ctx, char *key)
 			errno = json_object_get_int(err_obj);
 			ret = -1;
 		}
+		json_object_put(ctx->resp_obj);
+		ctx->resp_obj = NULL;
 	}
 
 	json_object_put(post_obj);
 	free(encoded_key);
 	json_tokener_free(ctx->tokener);
-	return ret;
+	resp = ctx->resp_obj;
+	ctx->resp_obj = NULL;
+	return resp;
 }
 
-int etcd_kv_range(struct etcd_cdc_ctx *ctx, char *key)
+struct json_object *etcd_kv_range(struct etcd_cdc_ctx *ctx, char *key)
 {
 	char url[1024];
-	struct json_object *post_obj = NULL;
+	struct json_object *post_obj = NULL, *resp = NULL;
 	char *encoded_key = NULL;
 	char *encoded_range = NULL;
 	int ret;
@@ -409,13 +413,17 @@ int etcd_kv_range(struct etcd_cdc_ctx *ctx, char *key)
 			errno = json_object_get_int(err_obj);
 			ret = -1;
 		}
+		json_object_put(ctx->resp_obj);
+		ctx->resp_obj = NULL;
 	}
 
 	free(encoded_range);
 	free(encoded_key);
 	json_object_put(post_obj);
 	json_tokener_free(ctx->tokener);
-	return ret;
+	resp = ctx->resp_obj;
+	ctx->resp_obj = NULL;
+	return resp;
 }
 
 static size_t

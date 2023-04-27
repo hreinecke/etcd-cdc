@@ -168,29 +168,28 @@ void *disc_log_entries(struct etcd_cdc_ctx *ctx, char *hostnqn,
 {
 	char prefix[256];
 	struct nvmf_disc_rsp_page_entry entry;
+	struct json_object *resp;
 	struct json_object_iterator obj_iter, obj_iter_end;
 	void *log_buf;
 	u8 *log_ptr;
 	size_t log_len;
-	int ret, entries = 0;
+	int entries = 0;
 
 	if (hostnqn) {
 		sprintf(prefix, "%s/%s", ctx->prefix, hostnqn);
 	} else {
 		sprintf(prefix, "%s", ctx->prefix);
 	}
-	ret = etcd_kv_range(ctx, prefix);
-	if (ret) {
-		fprintf(stderr, "etcd_kv_range failed, error %d\n", ret);
-		json_object_put(ctx->resp_obj);
-		ctx->resp_obj = NULL;
+	resp = etcd_kv_range(ctx, prefix);
+	if (!resp) {
+		fprintf(stderr, "etcd_kv_range failed, error %d\n", errno);
 		return NULL;
 	}
 	if (ctx->debug)
 		printf("keylist:\n%s\n",
-		       json_object_to_json_string_ext(ctx->resp_obj,
+		       json_object_to_json_string_ext(resp,
 					JSON_C_TO_STRING_PRETTY));
-	entries = calc_num_recs(ctx->resp_obj);
+	entries = calc_num_recs(resp);
 	printf("Found %u records\n", entries);
 	log_len = entries * sizeof(entry);
 	log_buf = malloc(log_len);
@@ -198,8 +197,8 @@ void *disc_log_entries(struct etcd_cdc_ctx *ctx, char *hostnqn,
 	log_ptr = log_buf;
 	entries = 0;
 
-	obj_iter = json_object_iter_begin(ctx->resp_obj);
-	obj_iter_end = json_object_iter_end(ctx->resp_obj);
+	obj_iter = json_object_iter_begin(resp);
+	obj_iter_end = json_object_iter_end(resp);
 
 	while (!json_object_iter_equal(&obj_iter, &obj_iter_end)) {
 		const char *key;
@@ -224,8 +223,7 @@ void *disc_log_entries(struct etcd_cdc_ctx *ctx, char *hostnqn,
 		log_ptr += sizeof(entry);
 		json_object_iter_next(&obj_iter);
 	}
-	json_object_put(ctx->resp_obj);
-	ctx->resp_obj = NULL;
+	json_object_put(resp);
 
 	*num_recs = entries;
 	return log_buf;
