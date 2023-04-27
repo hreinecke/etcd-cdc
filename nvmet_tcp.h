@@ -10,7 +10,7 @@ void tcp_release_tag(struct endpoint *ep, struct ep_qe *qe);
 int tcp_init_listener(struct host_iface *iface);
 void tcp_destroy_listener(struct host_iface *iface);
 int tcp_accept_connection(struct endpoint *ep);
-int tcp_wait_for_connection(struct host_iface *iface);
+int tcp_wait_for_connection(struct host_iface *iface, int timeout_ms);
 int tcp_recv_data(struct endpoint *ep, void *buf, u64 _len);
 int tcp_send_c2h_data(struct endpoint *ep, struct ep_qe *qe);
 int tcp_send_r2t(struct endpoint *ep, u16 tag);

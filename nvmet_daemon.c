@@ -244,7 +244,7 @@ void *run_host_interface(void *arg)
 	}
 
 	while (!stopped) {
-		id = tcp_wait_for_connection(iface);
+		id = tcp_wait_for_connection(iface, KATO_INTERVAL);
 
 		if (stopped)
 			break;
