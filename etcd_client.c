@@ -501,7 +501,7 @@ int etcd_kv_revision(struct etcd_cdc_ctx *ctx, char *key)
 
 		err_obj = json_object_object_get(ctx->resp_obj, "error");
 		if (err_obj) {
-			fprintf(stderr, "%s\n",
+			fprintf(stderr, "etcd_kv_exec: %s\n",
 				json_object_get_string(err_obj));
 			errno = EINVAL;
 			ret = -1;
@@ -517,8 +517,9 @@ int etcd_kv_revision(struct etcd_cdc_ctx *ctx, char *key)
 		fprintf(stderr, "invalid response, 'revision' not found\n");
 		errno = -ENOKEY;
 		ret = -1;
+	} else {
+		ret = json_object_get_int(rev_obj);
 	}
-	ret = json_object_get_int(rev_obj);
 	json_object_put(post_obj);
 	free(encoded_key);
 	json_tokener_free(ctx->tokener);

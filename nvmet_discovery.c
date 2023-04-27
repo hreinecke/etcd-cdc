@@ -141,8 +141,7 @@ static int calc_num_recs(struct json_object *obj)
 int nvmet_etcd_genctr(struct etcd_cdc_ctx *ctx)
 {
 	char key[1024];
-	int ret, genctr;
-	struct json_object *rev_obj;
+	int ret;
 
 	sprintf(key, "%s/%s/genctr",
 		ctx->prefix, NVME_DISC_SUBSYS_NAME);
@@ -151,16 +150,7 @@ int nvmet_etcd_genctr(struct etcd_cdc_ctx *ctx)
 		fprintf(stderr, "etcd_kv_revision failed, error %d\n", ret);
 		return -1;
 	}
-	rev_obj = json_object_object_get(ctx->resp_obj, "revision");
-	if (!rev_obj) {
-		fprintf(stderr, "parse error, 'revision' not found\n");
-		return -1;
-	}
-	genctr = json_object_get_int(rev_obj);
-	json_object_put(ctx->resp_obj);
-	ctx->resp_obj = NULL;
-
-	return genctr;
+	return ret;
 }
 
 void *disc_log_entries(struct etcd_cdc_ctx *ctx, char *hostnqn,
