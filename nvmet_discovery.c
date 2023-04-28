@@ -16,6 +16,8 @@ static int parse_etcd_kv(char *prefix, char *hostnqn,
 	int subtype = NVME_NQN_NVM;
 	unsigned char port;
 
+	if (hostnqn && !strcmp(hostnqn, NVME_DISC_SUBSYS_NAME))
+		subtype = NVME_NQN_CUR;
 	printf("Parsing key %s\n", key);
 	/* key format: <prefix>/<hostnqn>/<subnqn>/<portid> */
 	key_parse = strdup(key);
@@ -36,15 +38,18 @@ static int parse_etcd_kv(char *prefix, char *hostnqn,
 		free(key_parse);
 		return -EINVAL;
 	}
-	if (strlen(k)) {
-		if (!strcmp(k, NVME_DISC_SUBSYS_NAME))
-			subtype = NVME_NQN_CUR;
-		else if (hostnqn && strcmp(hostnqn, k)) {
+	if (!hostnqn) {
+		if (strlen(k)) {
 			fprintf(stderr, "Skip invalid hostnqn host '%s'\n", k);
 			free(key_parse);
 			return -EINVAL;
 		}
+	} else if (strcmp(hostnqn, k)) {
+		fprintf(stderr, "Skip invalid hostnqn host '%s'\n", k);
+		free(key_parse);
+		return -EINVAL;
 	}
+
 	k = strtok_r(NULL, "/", &key_save);
 	if (!k || !strlen(k)) {
 		fprintf(stderr, "parse error (subnqn) on key '%s'\n", key);
@@ -161,6 +166,7 @@ void *disc_log_entries(struct etcd_cdc_ctx *ctx, char *hostnqn,
 	sprintf(prefix, "%s/", ctx->prefix);
 	if (hostnqn)
 		strcat(prefix, hostnqn);
+	strcat(prefix, "/");
 	resp = etcd_kv_range(ctx, prefix);
 	if (!resp) {
 		fprintf(stderr, "etcd_kv_range failed, error %d\n", errno);
@@ -213,10 +219,10 @@ void *disc_log_entries(struct etcd_cdc_ctx *ctx, char *hostnqn,
 u8 *nvmet_etcd_disc_log(struct etcd_cdc_ctx *ctx, char *hostnqn, size_t *len)
 {
 	int genctr;
-	int num_host_entries = 0, num_wildcard_entries = 0, num_recs;
+	int num_host_entries = 0, num_wildcard_entries = 0, num_discovery_entries = 0, num_recs;
 	struct nvmf_disc_rsp_page_hdr *hdr;
 	struct nvmf_disc_rsp_page_entry entry;
-	void *host_entries, *wildcard_entries, *log_buf;
+	void *host_entries, *wildcard_entries, *discovery_entries, *log_buf;
 	unsigned char *log_ptr;
 	size_t log_len, entry_len;
 
@@ -232,6 +238,13 @@ u8 *nvmet_etcd_disc_log(struct etcd_cdc_ctx *ctx, char *hostnqn, size_t *len)
 	if (wildcard_entries) {
 		printf("Found %u wildcard records\n", num_wildcard_entries);
 		num_recs += num_wildcard_entries;
+	}
+	discovery_entries = disc_log_entries(ctx, NVME_DISC_SUBSYS_NAME,
+					     num_recs,
+					     &num_discovery_entries);
+	if (discovery_entries) {
+		printf("Found %u discovery records\n", num_discovery_entries);
+		num_recs += num_discovery_entries;
 	}
 	log_len = sizeof(struct nvmf_disc_rsp_page_hdr) +
 		(num_recs * sizeof(entry));
@@ -260,7 +273,12 @@ u8 *nvmet_etcd_disc_log(struct etcd_cdc_ctx *ctx, char *hostnqn, size_t *len)
 		log_ptr += entry_len;
 		free(wildcard_entries);
 	}
-
+	if (discovery_entries) {
+		entry_len = sizeof(entry) * num_discovery_entries;
+		memcpy(log_ptr, discovery_entries, entry_len);
+		log_ptr += entry_len;
+		free(discovery_entries);
+	}
 	*len = log_len;
 	return log_buf;
 }
