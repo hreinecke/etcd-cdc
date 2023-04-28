@@ -165,11 +165,9 @@ void *disc_log_entries(struct etcd_cdc_ctx *ctx, char *hostnqn,
 	size_t log_len;
 	int entries = 0;
 
-	if (hostnqn) {
-		sprintf(prefix, "%s/%s", ctx->prefix, hostnqn);
-	} else {
-		sprintf(prefix, "%s", ctx->prefix);
-	}
+	sprintf(prefix, "%s/", ctx->prefix);
+	if (hostnqn)
+		strcat(prefix, hostnqn);
 	resp = etcd_kv_range(ctx, prefix);
 	if (!resp) {
 		fprintf(stderr, "etcd_kv_range failed, error %d\n", errno);

@@ -33,7 +33,7 @@
 #include <getopt.h>
 #include <sys/types.h>
 #include <fcntl.h>
-
+#include <json-c/json.h>
 #include <sys/inotify.h>
 
 #include "nvmet_common.h"
@@ -43,24 +43,9 @@ static char *default_configfs = "/sys/kernel/config/nvmet";
 
 #define INOTIFY_BUFFER_SIZE 8192
 
+int nvmet_etcd_genctr;
 int inotify_fd;
 static int signal_fd;
-
-void set_genctr(struct etcd_cdc_ctx *ctx, int genctr)
-{
-	char key[1024];
-	char value[1024];
-
-	sprintf(key, "%s/%s/genctr",
-		ctx->prefix, NVME_DISC_SUBSYS_NAME);
-	sprintf(value, "%d", genctr);
-
-	if (etcd_kv_put(ctx, key, value, false) < 0) {
-		fprintf(stderr, "cannot add key %s, error %d\n",
-			key, errno);
-	}
-	printf("Updated key %s: %s\n", key, value);
-}
 
 static void inotify_loop(struct etcd_cdc_ctx *ctx)
 {
@@ -137,6 +122,7 @@ int parse_opts(struct etcd_cdc_ctx *ctx, int argc, char *argv[])
 {
 	struct option getopt_arg[] = {
 		{"configfs", required_argument, 0, 'c'},
+		{"discovery_nqn", required_argument, 0, 'd'},
 		{"etcd_prefix", required_argument, 0, 'e'},
 		{"port", required_argument, 0, 'p'},
 		{"host", required_argument, 0, 'h'},
@@ -147,11 +133,14 @@ int parse_opts(struct etcd_cdc_ctx *ctx, int argc, char *argv[])
 	char c;
 	int getopt_ind;
 
-	while ((c = getopt_long(argc, argv, "c:e:p:h:st:v",
+	while ((c = getopt_long(argc, argv, "c:d:e:p:h:st:v",
 				getopt_arg, &getopt_ind)) != -1) {
 		switch (c) {
 		case 'c':
 			ctx->configfs = optarg;
+			break;
+		case 'd':
+			ctx->discovery_nqn = strdup(optarg);
 			break;
 		case 'e':
 			ctx->prefix = optarg;
@@ -221,7 +210,8 @@ int main (int argc, char *argv[])
 		exit(1);
 	}
 
-	set_genctr(ctx, 1);
+	nvmet_etcd_discovery_nqn(ctx);
+	set_genctr(ctx, ++nvmet_etcd_genctr);
 	watch_subsys_dir(ctx);
 	watch_port_dir(ctx);
 

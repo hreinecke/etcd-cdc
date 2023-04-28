@@ -14,6 +14,7 @@ struct etcd_cdc_ctx {
 	char *host;
 	int port;
 	char *hostnqn;
+	char *discovery_nqn;
 	char *configfs;
 	char *prefix;
 	int debug;
