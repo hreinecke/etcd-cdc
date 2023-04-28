@@ -146,21 +146,6 @@ static int calc_num_recs(struct json_object *obj)
 	return numrec;
 }
 
-int nvmet_etcd_genctr(struct etcd_cdc_ctx *ctx)
-{
-	char key[1024];
-	int ret;
-
-	sprintf(key, "%s/%s/genctr",
-		ctx->prefix, NVME_DISC_SUBSYS_NAME);
-	ret = etcd_kv_revision(ctx, key);
-	if (ret < 0) {
-		fprintf(stderr, "etcd_kv_revision failed, error %d\n", ret);
-		return -1;
-	}
-	return ret;
-}
-
 void *disc_log_entries(struct etcd_cdc_ctx *ctx, char *hostnqn,
 		       int port_id_offset, int *num_recs)
 {
@@ -254,7 +239,7 @@ u8 *nvmet_etcd_disc_log(struct etcd_cdc_ctx *ctx, char *hostnqn, size_t *len)
 	memset(log_buf, 0, log_len);
 	hdr = (struct nvmf_disc_rsp_page_hdr *)log_buf;
 	hdr->recfmt = 1;
-	genctr = nvmet_etcd_genctr(ctx);
+	genctr = nvmet_etcd_get_genctr(ctx);
 	if (genctr < 0)
 		genctr = nvmf_discovery_genctr;
 	hdr->genctr = htole64(genctr);

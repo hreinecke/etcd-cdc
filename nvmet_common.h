@@ -185,6 +185,7 @@ static inline void set_response(struct nvme_completion *resp,
 
 
 void nvmet_etcd_set_genctr(struct etcd_cdc_ctx *ctx, int genctr);
+int nvmet_etcd_get_genctr(struct etcd_cdc_ctx *ctx);
 void nvmet_etcd_discovery_nqn(struct etcd_cdc_ctx *ctx);
 
 void handle_disconnect(struct endpoint *ep, int shutdown);

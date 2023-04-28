@@ -22,6 +22,22 @@ void nvmet_etcd_set_genctr(struct etcd_cdc_ctx *ctx, int genctr)
 	printf("Updated key %s: %s\n", key, value);
 }
 
+int nvmet_etcd_get_genctr(struct etcd_cdc_ctx *ctx)
+{
+	char key[1024];
+	int ret;
+
+	sprintf(key, "%s/%s/%s/genctr",
+		ctx->prefix, NVME_DISC_SUBSYS_NAME,
+		ctx->discovery_nqn);
+	ret = etcd_kv_revision(ctx, key);
+	if (ret < 0) {
+		fprintf(stderr, "etcd_kv_revision failed, error %d\n", ret);
+		return -1;
+	}
+	return ret;
+}
+
 void nvmet_etcd_discovery_nqn(struct etcd_cdc_ctx *ctx)
 {
 	char key[1024];
