@@ -322,6 +322,7 @@ static int format_disc_log(void *data, u64 data_offset,
 	if (data_offset > log_len) {
 		ctrl_err(ep, "invalid discovery log page offset %llu len %lu",
 			 data_offset, log_len);
+		free(log_buf);
 		return 0;
 	}
 	memcpy(data, (u8 *)log_buf + data_offset, log_len);

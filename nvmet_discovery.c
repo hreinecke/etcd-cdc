@@ -60,15 +60,15 @@ static int parse_etcd_kv(char *prefix, char *hostnqn,
 		return -EINVAL;
 	}
 	/* skip genctr */
-	if (!strcmp(k, "genctr"))
-		return 0;
-	port = strtoul(k, &eptr, 10);
-	if (eptr == k) {
-		fprintf(stderr, "Skip invalid portid '%s'\n", k);
+	if (!strcmp(k, "genctr")) {
+		fprintf(stderr, "Skip genctr\n");
 		free(key_parse);
 		return -EINVAL;
 	}
-	entry->portid = port;
+	port = strtoul(k, &eptr, 10);
+	if (eptr != k)
+		entry->portid = port;
+
 	entry->cntlid = htole16(NVME_CNTLID_DYNAMIC);
 	entry->asqsz = 32;
 	entry->subtype = subtype;
@@ -238,14 +238,16 @@ u8 *nvmet_etcd_disc_log(struct etcd_cdc_ctx *ctx, char *hostnqn, size_t *len)
 	num_recs = 0;
 	host_entries = disc_log_entries(ctx, hostnqn, num_recs,
 					&num_host_entries);
-	printf("Found %u host records\n", num_host_entries);
-
-	num_recs += num_host_entries;
+	if (host_entries) {
+		printf("Found %u host records\n", num_host_entries);
+		num_recs += num_host_entries;
+	}
 	wildcard_entries = disc_log_entries(ctx, NULL, num_recs,
 					    &num_wildcard_entries);
-	printf("Found %u wildcard records\n", num_wildcard_entries);
-	num_recs += num_wildcard_entries;
-
+	if (wildcard_entries) {
+		printf("Found %u wildcard records\n", num_wildcard_entries);
+		num_recs += num_wildcard_entries;
+	}
 	log_len = sizeof(struct nvmf_disc_rsp_page_hdr) +
 		(num_recs * sizeof(entry));
 	log_buf = malloc(log_len);
@@ -261,13 +263,13 @@ u8 *nvmet_etcd_disc_log(struct etcd_cdc_ctx *ctx, char *hostnqn, size_t *len)
 	log_ptr = log_buf;
 	log_ptr += sizeof(struct nvmf_disc_rsp_page_hdr);
 
-	if (num_host_entries) {
+	if (host_entries) {
 		entry_len = sizeof(entry) * num_host_entries;
 		memcpy(log_ptr, host_entries, entry_len);
 		log_ptr += entry_len;
 		free(host_entries);
 	}
-	if (num_wildcard_entries) {
+	if (wildcard_entries) {
 		entry_len = sizeof(entry) * num_wildcard_entries;
 		memcpy(log_ptr, wildcard_entries, entry_len);
 		log_ptr += entry_len;

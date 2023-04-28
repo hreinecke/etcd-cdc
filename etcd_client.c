@@ -100,6 +100,8 @@ struct etcd_cdc_ctx *etcd_dup(struct etcd_cdc_ctx *ctx)
 	new_ctx->lease = -1;
 	new_ctx->ttl = ctx->ttl;
 	new_ctx->debug = ctx->debug;
+	if (ctx->discovery_nqn)
+		new_ctx->discovery_nqn = strdup(ctx->discovery_nqn);
 
 	return new_ctx;
 }
@@ -109,6 +111,8 @@ void etcd_exit(struct etcd_cdc_ctx *ctx)
 	if (!ctx)
 		return;
 	json_object_put(ctx->resp_obj);
+	if (ctx->discovery_nqn)
+		free(ctx->discovery_nqn);
 	free(ctx);
 }
 
@@ -162,6 +166,8 @@ etcd_parse_range_response (char *ptr, size_t size, size_t nmemb, void *arg)
 		value_str = __b64dec(json_object_get_string(value_obj));
 		json_object_object_add(ctx->resp_obj, key_str,
 				       json_object_new_string(value_str));
+		free(value_str);
+		free(key_str);
 	}
 out:
 	json_object_put(etcd_resp);
@@ -328,6 +334,8 @@ int etcd_kv_put(struct etcd_cdc_ctx *ctx, char *key, char *value, bool lease)
 	free(encoded_value);
 	free(encoded_key);
 	json_object_put(post_obj);
+	json_object_put(ctx->resp_obj);
+	ctx->resp_obj = NULL;
 	return ret;
 }
 
