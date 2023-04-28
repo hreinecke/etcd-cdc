@@ -34,9 +34,9 @@
 #include <sys/inotify.h>
 
 #include "list.h"
+#include "nvmet_common.h"
 #include "nvmet_etcd.h"
 
-static int inotify_genctr;
 LIST_HEAD(dir_watcher_list);
 
 enum watcher_type {
@@ -170,7 +170,7 @@ static void gen_host_kv_key(struct etcd_cdc_ctx *ctx,
 			return;
 		}
 	}
-	set_genctr(ctx, inotify_genctr++);
+	nvmet_etcd_set_genctr(ctx, 1);
 }
 
 static void gen_subsys_kv_key(struct etcd_cdc_ctx *ctx,

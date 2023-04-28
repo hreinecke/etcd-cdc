@@ -13,6 +13,7 @@ static int parse_etcd_kv(char *prefix, char *hostnqn,
 	char *addr, *a, *addr_save;
 	char *traddr = NULL, *trtype = NULL, *trsvcid = NULL, *adrfam;
 	int traddr_len;
+	int subtype = NVME_NQN_NVM;
 	unsigned char port;
 
 	printf("Parsing key %s\n", key);
@@ -35,10 +36,14 @@ static int parse_etcd_kv(char *prefix, char *hostnqn,
 		free(key_parse);
 		return -EINVAL;
 	}
-	if (hostnqn && strlen(k) && strcmp(hostnqn, k)) {
-		fprintf(stderr, "Skip invalid hostnqn host '%s'\n", k);
-		free(key_parse);
-		return -EINVAL;
+	if (strlen(k)) {
+		if (!strcmp(k, NVME_DISC_SUBSYS_NAME))
+			subtype = NVME_NQN_CUR;
+		else if (hostnqn && strcmp(hostnqn, k)) {
+			fprintf(stderr, "Skip invalid hostnqn host '%s'\n", k);
+			free(key_parse);
+			return -EINVAL;
+		}
 	}
 	k = strtok_r(NULL, "/", &key_save);
 	if (!k || !strlen(k)) {
@@ -54,6 +59,9 @@ static int parse_etcd_kv(char *prefix, char *hostnqn,
 		free(key_parse);
 		return -EINVAL;
 	}
+	/* skip genctr */
+	if (!strcmp(k, "genctr"))
+		return 0;
 	port = strtoul(k, &eptr, 10);
 	if (eptr == k) {
 		fprintf(stderr, "Skip invalid portid '%s'\n", k);
@@ -63,7 +71,7 @@ static int parse_etcd_kv(char *prefix, char *hostnqn,
 	entry->portid = port;
 	entry->cntlid = htole16(NVME_CNTLID_DYNAMIC);
 	entry->asqsz = 32;
-	entry->subtype = NVME_NQN_NVM;
+	entry->subtype = subtype;
 	free(key_parse);
 	printf("Parsing value %s\n", value);
 	addr = strdup(value);

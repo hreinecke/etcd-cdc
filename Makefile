@@ -2,7 +2,7 @@
 PRG = nvmet_etcd
 DISC = nvmet_discd
 TEST = etcd_tool
-DISC_OBJS = nvmet_daemon.o nvmet_tcp.o nvmet_cmds.o nvmet_endpoint.o nvmet_discovery.o etcd_client.o
+DISC_OBJS = nvmet_daemon.o nvmet_tcp.o nvmet_cmds.o nvmet_endpoint.o nvmet_discovery.o etcd_client.o nvmet_lib.o
 PRG_OBJS = nvmet_etcd.o nvmet_inotify.o etcd_client.o nvmet_lib.o
 TEST_OBJS = etcd_tool.o etcd_client.o
 CFLAGS = -Wall -g

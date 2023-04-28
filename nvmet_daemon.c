@@ -98,12 +98,12 @@ static int register_host_iface(struct host_iface *iface)
 	char key[1024], value[1024];
 
 	if (iface->adrfam == AF_INET) {
-		sprintf(key, "%s/%s/%s:%d", iface->ctx->prefix,
-			NVME_DISC_SUBSYS_NAME,
+		sprintf(key, "%s/%s/%s/%s:%d", iface->ctx->prefix,
+			NVME_DISC_SUBSYS_NAME, iface->ctx->discovery_nqn,
 			iface->address, iface->port_num);
 	} else {
-		sprintf(key, "%s/%s/[%s]:%d", iface->ctx->prefix,
-			NVME_DISC_SUBSYS_NAME,
+		sprintf(key, "%s/%s/%s/[%s]:%d", iface->ctx->prefix,
+			NVME_DISC_SUBSYS_NAME, iface->ctx->discovery_nqn,
 			iface->address, iface->port_num);
 	}
 	sprintf(value, "trtype=tcp,traddr=%s,trsvcid=%d,adrfam=%s",
@@ -115,6 +115,7 @@ static int register_host_iface(struct host_iface *iface)
 		return -1;
 	}
 	printf("registered key %s: %s\n", key, value);
+	nvmet_etcd_set_genctr(iface->ctx, 1);
 	return 0;
 }
 
@@ -336,7 +337,7 @@ static int parse_args(struct etcd_cdc_ctx *ctx, int argc, char *argv[])
 			run_as_daemon= 1;
 			break;
 		case 'n':
-			discovery_nqn = optarg;
+			ctx->discovery_nqn = strdup(optarg);
 			break;
 		case 'p':
 			errno = 0;
@@ -467,6 +468,8 @@ int main(int argc, char *argv[])
 		etcd_exit(ctx);
 		return ret;
 	}
+
+	nvmet_etcd_discovery_nqn(ctx);
 
 	list_for_each_entry(iface, &iface_linked_list, node) {
 		pthread_attr_t pthread_attr;

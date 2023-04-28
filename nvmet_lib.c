@@ -6,7 +6,7 @@
 #include "etcd_client.h"
 #include "nvmet_common.h"
 
-void set_genctr(struct etcd_cdc_ctx *ctx, int genctr)
+void nvmet_etcd_set_genctr(struct etcd_cdc_ctx *ctx, int genctr)
 {
 	char key[1024];
 	char value[1024];

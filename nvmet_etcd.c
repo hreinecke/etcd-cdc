@@ -43,7 +43,6 @@ static char *default_configfs = "/sys/kernel/config/nvmet";
 
 #define INOTIFY_BUFFER_SIZE 8192
 
-int nvmet_etcd_genctr;
 int inotify_fd;
 static int signal_fd;
 
@@ -211,7 +210,7 @@ int main (int argc, char *argv[])
 	}
 
 	nvmet_etcd_discovery_nqn(ctx);
-	set_genctr(ctx, ++nvmet_etcd_genctr);
+	nvmet_etcd_set_genctr(ctx, 1);
 	watch_subsys_dir(ctx);
 	watch_port_dir(ctx);
 
