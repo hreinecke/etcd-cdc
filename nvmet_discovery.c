@@ -94,6 +94,7 @@ static int parse_etcd_kv(char *prefix, char *hostnqn,
 	}
 	if (!trtype || !traddr) {
 		fprintf(stderr, "invalid entry %s\n", value);
+		free(addr);
 		return -EINVAL;
 	}
 	entry->adrfam = NVMF_ADDR_FAMILY_IP4;
@@ -118,6 +119,7 @@ static int parse_etcd_kv(char *prefix, char *hostnqn,
 		entry->trtype = NVMF_TRTYPE_LOOP;
 	} else {
 		fprintf(stderr, "invalid trtype %s\n", trtype);
+		free(addr);
 		return -EINVAL;
 	}
 	memset(entry->traddr, 0, NVMF_NQN_FIELD_LEN);
