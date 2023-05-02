@@ -158,7 +158,7 @@ static void gen_host_kv_key(struct etcd_cdc_ctx *ctx,
 		return;
 
 	sprintf(key, "%s/%s/%s/%s", ctx->prefix,
-		strlen(host->hostnqn) ? host->hostnqn : "",
+		strlen(host->hostnqn) ? host->hostnqn : "*",
 		subsys->subsysnqn, port->port_id);
 	if (op == KV_KEY_OP_ADD) {
 		sprintf(value,"trtype=%s,traddr=%s,adrfam=%s",

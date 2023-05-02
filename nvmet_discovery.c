@@ -39,8 +39,8 @@ static int parse_etcd_kv(char *prefix, char *hostnqn,
 		return -EINVAL;
 	}
 	if (!hostnqn) {
-		if (strlen(k)) {
-			fprintf(stderr, "Skip invalid hostnqn host '%s'\n", k);
+		if (strcmp(k, "*")) {
+			fprintf(stderr, "Skip non-empty hostnqn host '%s'\n", k);
 			free(key_parse);
 			return -EINVAL;
 		}
@@ -168,6 +168,8 @@ void *disc_log_entries(struct etcd_cdc_ctx *ctx, char *hostnqn,
 	sprintf(prefix, "%s/", ctx->prefix);
 	if (hostnqn)
 		strcat(prefix, hostnqn);
+	else
+		strcat(prefix, "*");
 	strcat(prefix, "/");
 	resp = etcd_kv_range(ctx, prefix);
 	if (!resp) {
