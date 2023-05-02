@@ -1,6 +1,13 @@
 #ifndef _ETCD_CLIENT_H
 #define _ETCD_CLIENT_H
 
+#define DEBUG_TCP		1
+#define DEBUG_ETCD		2
+#define DEBUG_CURL		4
+#define DEBUG_INOTIFY		8
+#define DEBUG_NVMET	       16
+#define DEBUG_DISCOVERY	       32
+
 enum kv_key_op {
 	KV_KEY_OP_ADD,
 	KV_KEY_OP_DELETE,

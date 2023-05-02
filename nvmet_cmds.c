@@ -31,10 +31,10 @@ static int handle_property_set(struct endpoint *ep, struct ep_qe *qe,
 {
 	int ret = 0;
 
-#ifdef DEBUG_COMMANDS
-	print_debug("nvme_fabrics_type_property_set %x = %llx",
-		   cmd->prop_set.offset, cmd->prop_set.value);
-#endif
+	if (ep->ctx->debug & DEBUG_NVMET)
+		ctrl_info(ep, "nvme_fabrics_type_property_set %x = %llx",
+			  cmd->prop_set.offset, cmd->prop_set.value);
+
 	if (cmd->prop_set.offset == NVME_REG_CC) {
 		ep->ctrl->cc = le64toh(cmd->prop_set.value);
 		if (ep->ctrl->cc & NVME_CC_SHN_MASK)
@@ -65,17 +65,16 @@ static int handle_property_get(struct endpoint *ep, struct ep_qe *qe,
 	else if (cmd->prop_get.offset == NVME_REG_VS)
 		value = NVME_VER;
 	else {
-#ifdef DEBUG_COMMANDS
-		print_debug("nvme_fabrics_type_property_get %x: N/I",
-			    cmd->prop_get.offset);
-#endif
+		if (ep->ctx->debug & DEBUG_NVMET)
+			ctrl_info(ep, "nvme_fabrics_type_property_get %x: N/I",
+				  cmd->prop_get.offset);
 		return NVME_SC_INVALID_FIELD;
 	}
 
-#ifdef DEBUG_COMMANDS
-	print_debug("nvme_fabrics_type_property_get %x: %llx",
+	if (ep->ctx->debug & DEBUG_NVMET)
+		ctrl_info(ep, "nvme_fabrics_type_property_get %x: %llx",
 		    cmd->prop_get.offset, value);
-#endif
+
 	qe->resp.result.u64 = htole64(value);
 
 	return 0;
@@ -89,10 +88,9 @@ static int handle_set_features(struct endpoint *ep, struct ep_qe *qe,
 	int fid = (cdw10 & 0xff), ncqr, nsqr;
 	int ret = 0;
 
-#ifdef DEBUG_COMMANDS
-	print_debug("nvme_fabrics_type_set_features cdw10 %x fid %x",
-		    cdw10, fid);
-#endif
+	if (ep->ctx->debug & DEBUG_NVMET)
+		ctrl_info(ep, "nvme_fabrics_type_set_features cdw10 %x fid %x",
+			  cdw10, fid);
 
 	switch (fid) {
 	case NVME_FEAT_NUM_QUEUES:
@@ -134,10 +132,9 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 	sqsize = le16toh(cmd->connect.sqsize);
 	kato = le32toh(cmd->connect.kato);
 
-#ifdef DEBUG_COMMANDS
-	print_debug("nvme_fabrics_connect qid %u sqsize %u kato %u",
-		    qid, sqsize, kato);
-#endif
+	if (ep->ctx->debug & DEBUG_NVMET)
+		ep_info(ep, "nvme_fabrics_connect qid %u sqsize %u kato %u",
+			qid, sqsize, kato);
 
 	ret = tcp_recv_data(ep, connect, qe->data_len);
 	if (ret) {
@@ -190,8 +187,9 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 		}
 	}
 	if (!ep->ctrl) {
-		ep_info(ep, "Allocating new controller '%s'",
-			connect->hostnqn);
+		if (ep->ctx->debug & DEBUG_NVMET)
+			ep_info(ep, "Allocating new controller '%s'",
+				connect->hostnqn);
 		ctrl = malloc(sizeof(*ctrl));
 		if (!ctrl) {
 			ep_err(ep, "Out of memory allocating controller");
@@ -203,6 +201,7 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 			ep->ctrl = ctrl;
 			ctrl->num_endpoints = 1;
 			ctrl->cntlid = nvmf_ctrl_id++;
+			ctrl->ctrl_type = NVME_CTRL_DISC;
 			list_add(&ctrl->node, &ctrl_list);
 		}
 	}
@@ -213,7 +212,8 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 		ret = NVME_SC_CONNECT_INVALID_PARAM;
 	}
 	if (!ret) {
-		ctrl_info(ep, "connected");
+		if (ep->ctx->debug & DEBUG_NVMET)
+			ctrl_info(ep, "connected");
 		qe->resp.result.u16 = htole16(ep->ctrl->cntlid);
 	}
 	return ret;
@@ -279,15 +279,12 @@ static int handle_identify(struct endpoint *ep, struct ep_qe *qe,
 			   struct nvme_command *cmd)
 {
 	int cns = cmd->identify.cns;
-#ifdef DEBUG_COMMANDS
 	u16 cid = cmd->identify.command_id;
-#endif
 	int ret, id_len;
 
-#ifdef DEBUG_COMMANDS
-	print_debug("cid %#x nvme_fabrics_identify cns %d len %llu",
-		    cid, cns, qe->data_len);
-#endif
+	if (ep->ctx->debug & DEBUG_NVMET)
+		ctrl_info(ep, "cid %#x nvme_fabrics_identify cns %d len %llu",
+			  cid, cns, qe->data_len);
 
 	switch (cns) {
 	case NVME_ID_CNS_CTRL:
@@ -318,7 +315,8 @@ static int format_disc_log(void *data, u64 data_offset,
 	if (!log_buf)
 		return 0;
 
-	ctrl_info(ep, "discovery log page len %lu", log_len);
+	if (ep->ctx->debug & DEBUG_DISCOVERY)
+		ctrl_info(ep, "discovery log page len %lu", log_len);
 	if (log_len > data_len)
 		log_len = data_len;
 	if (data_offset > log_len) {
@@ -328,8 +326,9 @@ static int format_disc_log(void *data, u64 data_offset,
 		return 0;
 	}
 	memcpy(data, (u8 *)log_buf + data_offset, log_len);
-	ctrl_info(ep, "Returning discovery log page offset %llu len %lu",
-		  data_offset, log_len);
+	if (ep->ctx->debug & DEBUG_DISCOVERY)
+		ctrl_info(ep, "discovery log page offset %llu len %lu",
+			  data_offset, log_len);
 	free(log_buf);
 	return data_len;
 }
@@ -340,11 +339,11 @@ static int handle_get_log_page(struct endpoint *ep, struct ep_qe *qe,
 	int ret = 0, log_len;
 	u64 offset = le64toh(cmd->get_log_page.lpo);
 
-#ifdef DEBUG_COMMANDS
-	print_debug("nvme_get_log_page opcode %02x lid %02x offset %lu len %lu",
-		    cmd->get_log_page.opcode, cmd->get_log_page.lid,
-		    (unsigned long)offset, (unsigned long)qe->data_len);
-#endif
+	if (ep->ctx->debug & DEBUG_NVMET)
+		ctrl_info(ep, "nvme_get_log_page opcode %02x lid %02x offset %lu len %lu",
+			  cmd->get_log_page.opcode, cmd->get_log_page.lid,
+			  (unsigned long)offset, (unsigned long)qe->data_len);
+
 	qe->data_pos = offset;
 
 	switch (cmd->get_log_page.lid) {
@@ -420,10 +419,8 @@ int handle_request(struct endpoint *ep, struct nvme_command *cmd)
 		if (!ret)
 			return 0;
 	} else if (cmd->common.opcode == nvme_admin_keep_alive) {
-#ifdef DEBUG_COMMANDS
-		print_debug("nvme_keep_alive ctrl %d qid %d",
-			    ep->ctrl->cntlid, ep->qid);
-#endif
+		if (ep->ctx->debug & DEBUG_NVMET)
+			ctrl_info(ep, "nvme_keep_alive");
 		ret = 0;
 	} else if (cmd->common.opcode == nvme_admin_get_log_page) {
 		ret = handle_get_log_page(ep, qe, cmd);

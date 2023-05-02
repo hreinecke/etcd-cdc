@@ -25,7 +25,7 @@
 #define TCP_NODELAY		1
 
 #define tcp_info(e, f, x...)					\
-	if (tcp_debug) {					\
+	if ((e)->ctx->debug & DEBUG_TCP) {			\
 		printf("ctrl %d qid %d: " f "\n",		\
 		       (e)->ctrl ? (e)->ctrl->cntlid : -1,	\
 		       (e)->qid, ##x);				\

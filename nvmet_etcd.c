@@ -127,12 +127,12 @@ int parse_opts(struct etcd_cdc_ctx *ctx, int argc, char *argv[])
 		{"host", required_argument, 0, 'h'},
 		{"ssl", no_argument, 0, 's'},
 		{"ttl", required_argument, 0, 't'},
-		{"verbose", no_argument, 0, 'v'},
+		{"verbose", required_argument, 0, 'v'},
 	};
-	char c;
+	char c, *eptr;
 	int getopt_ind;
 
-	while ((c = getopt_long(argc, argv, "c:d:e:p:h:st:v",
+	while ((c = getopt_long(argc, argv, "c:d:e:p:h:st:v:",
 				getopt_arg, &getopt_ind)) != -1) {
 		switch (c) {
 		case 'c':
@@ -157,7 +157,30 @@ int parse_opts(struct etcd_cdc_ctx *ctx, int argc, char *argv[])
 			ctx->ttl = atoi(optarg);
 			break;
 		case 'v':
-			ctx->debug++;
+			eptr = optarg;
+			do {
+				if (!strncmp(eptr, "tcp", 3))
+					ctx->debug |= DEBUG_TCP;
+				else if (!strncmp(eptr, "etcd", 4))
+					ctx->debug |= DEBUG_ETCD;
+				else if (!strncmp(eptr, "curl", 4))
+					ctx->debug |= DEBUG_CURL;
+				else if (!strncmp(eptr, "inotify", 7))
+					ctx->debug |= DEBUG_INOTIFY;
+				else if(!strncmp(eptr, "nvmet", 5))
+					ctx->debug |= DEBUG_NVMET;
+				else if(!strncmp(eptr, "discovery", 9))
+					ctx->debug |= DEBUG_DISCOVERY;
+				else {
+					fprintf(stderr,
+						"Invalid debug option %s\n",
+						eptr);
+					return 1;
+				}
+				eptr = strchr(eptr, ',');
+				if (eptr)
+					eptr++;
+			} while(eptr && *eptr);
 			break;
 		}
 	}

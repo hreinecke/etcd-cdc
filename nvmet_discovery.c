@@ -176,12 +176,13 @@ void *disc_log_entries(struct etcd_cdc_ctx *ctx, char *hostnqn,
 		fprintf(stderr, "etcd_kv_range failed, error %d\n", errno);
 		return NULL;
 	}
-	if (ctx->debug)
+	if (ctx->debug & DEBUG_DISCOVERY)
 		printf("keylist:\n%s\n",
 		       json_object_to_json_string_ext(resp,
 					JSON_C_TO_STRING_PRETTY));
 	entries = calc_num_recs(resp);
-	printf("Found %u records\n", entries);
+	if (ctx->debug & DEBUG_DISCOVERY)
+		printf("Found %u records\n", entries);
 	log_len = entries * sizeof(entry);
 	log_buf = malloc(log_len);
 	memset(log_buf, 0, log_len);
@@ -234,20 +235,26 @@ u8 *nvmet_etcd_disc_log(struct etcd_cdc_ctx *ctx, char *hostnqn, size_t *len)
 	host_entries = disc_log_entries(ctx, hostnqn, num_recs,
 					&num_host_entries);
 	if (host_entries) {
-		printf("Found %u host records\n", num_host_entries);
+		if (ctx->debug & DEBUG_DISCOVERY)
+			printf("Found %u host records\n",
+			       num_host_entries);
 		num_recs += num_host_entries;
 	}
 	wildcard_entries = disc_log_entries(ctx, NULL, num_recs,
 					    &num_wildcard_entries);
 	if (wildcard_entries) {
-		printf("Found %u wildcard records\n", num_wildcard_entries);
+		if (ctx->debug & DEBUG_DISCOVERY)
+			printf("Found %u wildcard records\n",
+			       num_wildcard_entries);
 		num_recs += num_wildcard_entries;
 	}
 	discovery_entries = disc_log_entries(ctx, NVME_DISC_SUBSYS_NAME,
 					     num_recs,
 					     &num_discovery_entries);
 	if (discovery_entries) {
-		printf("Found %u discovery records\n", num_discovery_entries);
+		if (ctx->debug & DEBUG_DISCOVERY)
+			printf("Found %u discovery records\n",
+			       num_discovery_entries);
 		num_recs += num_discovery_entries;
 	}
 	log_len = sizeof(struct nvmf_disc_rsp_page_hdr) +

@@ -699,8 +699,8 @@ int watch_port_dir(struct etcd_cdc_ctx *ctx)
 	DIR *pd;
 	struct dirent *pe;
 
-	if (ctx->debug > 1)
-		debug_inotify = ctx->debug - 1;
+	if (ctx->debug & DEBUG_INOTIFY)
+		debug_inotify = 1;
 	strcpy(ports_dir, ctx->configfs);
 	strcat(ports_dir, "/ports");
 	watch_directory(ports_dir, TYPE_PORT_DIR,

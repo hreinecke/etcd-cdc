@@ -20,7 +20,6 @@ char *discovery_nqn;
 int discovery_port = 8009;
 int stopped;
 int debug;
-int tcp_debug;
 static int signalled;
 static int portid;
 
@@ -313,7 +312,7 @@ static int parse_args(struct etcd_cdc_ctx *ctx, int argc, char *argv[])
 		{"etcd_host", required_argument, 0, 'H'},
 		{"etcd_ssl", no_argument, 0, 'S'},
 		{"ttl", required_argument, 0, 't'},
-		{"verbose", no_argument, 0, 'v'},
+		{"verbose", required_argument, 0, 'v'},
 		{NULL, 0, 0, 0},
 	};
 	int getopt_ind;
@@ -323,7 +322,7 @@ static int parse_args(struct etcd_cdc_ctx *ctx, int argc, char *argv[])
 	debug = 0;
 	run_as_daemon = 0;
 
-	while ((opt = getopt_long(argc, argv, "a:dn:p:i:e:P:H:St:v?",
+	while ((opt = getopt_long(argc, argv, "a:dn:p:i:e:P:H:St:v:?",
 				  getopt_arg, &getopt_ind)) != -1) {
 		switch (opt) {
 		case 'a':
@@ -375,9 +374,36 @@ static int parse_args(struct etcd_cdc_ctx *ctx, int argc, char *argv[])
 			ctx->ttl = atoi(optarg);
 			break;
 		case 'v':
-			ctx->debug++;
-			if (ctx->debug > 1)
-			    tcp_debug = 1;
+			eptr = optarg;
+			do {
+				if (!strncmp(eptr, "tcp", 3)) {
+					ctx->debug |= DEBUG_TCP;
+					printf("enabling tcp debug\n");
+				} else if (!strncmp(eptr, "etcd", 4)) {
+					ctx->debug |= DEBUG_ETCD;
+					printf("enabling etcd debug\n");
+				} else if (!strncmp(eptr, "curl", 4)) {
+					ctx->debug |= DEBUG_CURL;
+					printf("enabling curl debug\n");
+				} else if (!strncmp(eptr, "inotify", 7)) {
+					ctx->debug |= DEBUG_INOTIFY;
+					printf("enabling inotify debug\n");
+				} else if(!strncmp(eptr, "nvmet", 5)) {
+					ctx->debug |= DEBUG_NVMET;
+					printf("enabling nvmet debug\n");
+				} else if(!strncmp(eptr, "discovery", 9)) {
+					ctx->debug |= DEBUG_DISCOVERY;
+					printf("enabling discovery debug\n");
+				} else {
+					fprintf(stderr,
+						"Invalid debug option %s\n",
+						eptr);
+					return 1;
+				}
+				eptr = strchr(eptr, ',');
+				if (eptr)
+					eptr++;
+			} while(eptr && *eptr);
 			break;
 		case '?':
 		default:
