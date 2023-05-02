@@ -317,14 +317,15 @@ static int format_disc_log(void *data, u64 data_offset,
 
 	if (ep->ctx->debug & DEBUG_DISCOVERY)
 		ctrl_info(ep, "discovery log page len %lu", log_len);
-	if (log_len > data_len)
-		log_len = data_len;
 	if (data_offset > log_len) {
 		ctrl_err(ep, "invalid discovery log page offset %llu len %llu",
 			 data_offset, data_len);
 		free(log_buf);
 		return 0;
 	}
+	log_len -= data_offset;
+	if (log_len > data_len)
+		log_len = data_len;
 	memcpy(data, (u8 *)log_buf + data_offset, log_len);
 	if (ep->ctx->debug & DEBUG_DISCOVERY)
 		ctrl_info(ep, "discovery log page offset %llu len %lu",
