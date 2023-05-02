@@ -79,7 +79,7 @@ int main(int argc, char **argv)
 			ctx->proto = "https";
 			break;
 		case 'v':
-			ctx->debug++;
+			ctx->debug |= DEBUG_ETCD;
 			break;
 		}
 	}
