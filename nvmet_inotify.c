@@ -97,11 +97,26 @@ static struct nvmet_port *find_port_from_subsys(char *port_subsys_dir)
 	return NULL;
 }
 
+static struct nvmet_port_subsys *find_subsys(char *subnqn)
+{
+	struct dir_watcher *watcher;
+	struct nvmet_port_subsys *port_subsys;
+
+	list_for_each_entry(watcher, &dir_watcher_list, entry) {
+		if (watcher->type != TYPE_PORT_SUBSYS)
+			continue;
+		port_subsys = container_of(watcher, struct nvmet_port_subsys,
+					   watcher);
+		if (strcmp(port_subsys->subsysnqn, subnqn))
+			continue;
+		return port_subsys;
+	}
+	return NULL;
+}
+
 static struct nvmet_port_subsys *find_subsys_from_host(char *subsys_host_dir)
 {
 	char subnqn[256], *p;
-	struct dir_watcher *watcher;
-	struct nvmet_port_subsys *port_subsys;
 
 	p = strchr(subsys_host_dir, '/');
 	do {
@@ -121,16 +136,7 @@ static struct nvmet_port_subsys *find_subsys_from_host(char *subsys_host_dir)
 	if (p)
 		*p = '\0';
 
-	list_for_each_entry(watcher, &dir_watcher_list, entry) {
-		if (watcher->type != TYPE_PORT_SUBSYS)
-			continue;
-		port_subsys = container_of(watcher, struct nvmet_port_subsys,
-					   watcher);
-		if (strcmp(port_subsys->subsysnqn, subnqn))
-			continue;
-		return port_subsys;
-	}
-	return NULL;
+	return find_subsys(subnqn);
 }
 
 static void gen_host_kv_key(struct etcd_cdc_ctx *ctx,
@@ -148,7 +154,8 @@ static void gen_host_kv_key(struct etcd_cdc_ctx *ctx,
 		return;
 
 	sprintf(key, "%s/%s/%s/%s", ctx->prefix,
-		host->hostnqn, subsys->subsysnqn, port->port_id);
+		strlen(host->hostnqn) ? host->hostnqn : "",
+		subsys->subsysnqn, port->port_id);
 	if (op == KV_KEY_OP_ADD) {
 		sprintf(value,"trtype=%s,traddr=%s,adrfam=%s",
 			port->trtype, port->traddr, port->adrfam);
@@ -418,12 +425,65 @@ static void watch_subsys_hosts(struct etcd_cdc_ctx *ctx,
 	gen_host_kv_key(ctx, host, KV_KEY_OP_ADD);
 }
 
+static int attr_read_int(char *attr_path)
+{
+	char attr_buf[256], *p;
+	int fd, len;
+
+	fd = open(attr_path, O_RDONLY);
+	if (fd < 0) {
+		fprintf(stderr, "Failed to open '%s', error %d\n",
+			attr_path, errno);
+		return -1;
+	}
+	len = read(fd, attr_buf, 256);
+	if (len < 0)
+		memset(attr_buf, 0, 256);
+	else {
+		len = strtoul(attr_buf, &p, 10);
+		if (attr_buf == p)
+			len = -1;
+	}
+	close(fd);
+	return len;
+}
+
+static void watch_subsys_allow_any(struct etcd_cdc_ctx *ctx,
+				   char *subsys_dir, char *subnqn)
+{
+	struct nvmet_subsys_host *host;
+	struct dir_watcher *watcher;
+	int allow_any;
+
+	host = malloc(sizeof(struct nvmet_subsys_host));
+	if (!host) {
+		fprintf(stderr, "Cannot allocate %s\n", subnqn);
+		return;
+	}
+	host->hostnqn[0] = '\0';
+	sprintf(host->watcher.dirname, "%s/%s/attr_allow_any_host",
+		subsys_dir, subnqn);
+	host->watcher.type = TYPE_SUBSYS;
+	watcher = add_watch(&host->watcher, IN_MODIFY);
+	if (watcher) {
+		if (watcher == &host->watcher)
+			free(host);
+		return;
+	}
+	host->subsys = find_subsys(subnqn);
+	allow_any = attr_read_int(host->watcher.dirname);
+	if (allow_any)
+		gen_host_kv_key(ctx, host, KV_KEY_OP_ADD);
+}
+
 static void watch_subsys(struct etcd_cdc_ctx *ctx,
 			 char *subsys_dir, char *subnqn)
 {
 	char hosts_dir[PATH_MAX + 1];
 	DIR *hd;
 	struct dirent *he;
+
+	watch_subsys_allow_any(ctx, subsys_dir, subnqn);
 
 	sprintf(hosts_dir, "%s/%s/allowed_hosts",
 		subsys_dir, subnqn);
@@ -464,6 +524,9 @@ display_inotify_event(struct inotify_event *ev)
 
 	if (ev->mask & IN_DELETE_SELF)
 		printf("IN_DELETE_SELF ");
+
+	if (ev->mask & IN_MODIFY)
+		printf("IN_MODIFY ");
 
 	if (ev->mask & IN_MOVE_SELF)
 		printf("IN_MOVE_SELF ");
@@ -598,6 +661,31 @@ int process_inotify_event(struct etcd_cdc_ctx *ctx,
 				free(watcher);
 				break;
 			}
+		}
+	} else if (ev->mask & IN_MODIFY) {
+		char subdir[FILENAME_MAX + 1];
+		int allow_any;
+
+		sprintf(subdir, "%s/%s", watcher->dirname, ev->name);
+#ifdef DEBUG
+		printf("write %s\n", subdir);
+#endif
+		switch (watcher->type) {
+		case TYPE_SUBSYS:
+			host = container_of(watcher,
+					    struct nvmet_subsys_host,
+					    watcher);
+			allow_any = attr_read_int(watcher->dirname);
+			if (allow_any)
+				gen_host_kv_key(ctx, host, KV_KEY_OP_ADD);
+			else
+				gen_host_kv_key(ctx, host, KV_KEY_OP_DELETE);
+			break;
+		default:
+			fprintf(stderr, "unhandled modify type %d\n",
+				watcher->type);
+			free(watcher);
+			break;
 		}
 	}
 	return ev_len;
