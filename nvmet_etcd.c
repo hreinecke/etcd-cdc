@@ -211,8 +211,8 @@ int main (int argc, char *argv[])
 
 	nvmet_etcd_discovery_nqn(ctx);
 	nvmet_etcd_set_genctr(ctx, 1);
-	watch_subsys_dir(ctx);
 	watch_port_dir(ctx);
+	watch_subsys_dir(ctx);
 
 	inotify_loop(ctx);
 

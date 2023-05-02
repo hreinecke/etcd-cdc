@@ -39,6 +39,8 @@
 
 LIST_HEAD(dir_watcher_list);
 
+int debug_inotify;
+
 enum watcher_type {
 	TYPE_PORT_DIR,		/* ports */
 	TYPE_PORT,		/* ports/<port> */
@@ -111,6 +113,8 @@ static struct nvmet_port_subsys *find_subsys(char *subnqn)
 			continue;
 		return port_subsys;
 	}
+	if (debug_inotify)
+		printf("Subsys %s: no ports found\n", subnqn);
 	return NULL;
 }
 
@@ -193,16 +197,18 @@ static void gen_subsys_kv_key(struct etcd_cdc_ctx *ctx,
 		host = container_of(watcher, struct nvmet_subsys_host, watcher);
 		if (op == KV_KEY_OP_ADD && !host->subsys) {
 			host->subsys = find_subsys_from_host(watcher->dirname);
-#ifdef DEBUG
-			if (host->subsys)
+			if (debug_inotify && host->subsys)
 				printf("updated subsys for host %s\n",
 				       host->hostnqn);
-#endif
 		}
 		if (host->subsys == subsys) {
 			gen_host_kv_key(ctx, host, op);
-			if (op == KV_KEY_OP_DELETE)
+			if (op == KV_KEY_OP_DELETE) {
 				host->subsys = NULL;
+				if (debug_inotify)
+					printf("removed subsys for host %s\n",
+					       host->hostnqn);
+			}
 		}
 	}
 }
@@ -227,10 +233,9 @@ static struct dir_watcher *add_watch(struct dir_watcher *watcher, int flags)
 			watcher->dirname, errno);
 		return watcher;
 	}
-#ifdef DEBUG
-	printf("add inotify watch %d type %d to %s\n",
-	       watcher->wd, watcher->type, watcher->dirname);
-#endif
+	if (debug_inotify)
+		printf("add inotify watch %d type %d to %s\n",
+		       watcher->wd, watcher->type, watcher->dirname);
 	list_add(&watcher->entry, &dir_watcher_list);
 	return 0;
 }
@@ -243,10 +248,9 @@ static int remove_watch(struct dir_watcher *watcher)
 	if (ret < 0)
 		fprintf(stderr, "Failed to remove inotify watch on '%s'\n",
 			watcher->dirname);
-#ifdef DEBUG
-	printf("remove inotify watch %d type %d from '%s'\n",
-	       watcher->wd, watcher->type, watcher->dirname);
-#endif
+	if (debug_inotify)
+		printf("remove inotify watch %d type %d from '%s'\n",
+		       watcher->wd, watcher->type, watcher->dirname);
 	list_del_init(&watcher->entry);
 	return ret;
 }
@@ -506,7 +510,8 @@ static void watch_subsys(struct etcd_cdc_ctx *ctx,
 static void
 display_inotify_event(struct inotify_event *ev)
 {
-#ifdef DEBUG
+	if (!debug_inotify)
+		return;
 	printf("inotify wd = %d; ", ev->wd);
 	if (ev->cookie > 0)
 		printf("cookie = %4d; ", ev->cookie);
@@ -545,7 +550,6 @@ display_inotify_event(struct inotify_event *ev)
 	if (ev->len > 0)
 		printf("name = %s", ev->name);
 	printf("\n");
-#endif
 }
 
 int process_inotify_event(struct etcd_cdc_ctx *ctx,
@@ -570,21 +574,20 @@ int process_inotify_event(struct etcd_cdc_ctx *ctx,
 		}
 	}
 	if (!watcher) {
-#ifdef DEBUG
-		printf("No watcher for wd %d\n", ev->wd);
-#endif
+		if (debug_inotify)
+			printf("No watcher for wd %d\n", ev->wd);
 		return ev_len;
 	}
 	if (ev->mask & IN_CREATE) {
 		char subdir[FILENAME_MAX + 1];
 
 		sprintf(subdir, "%s/%s", watcher->dirname, ev->name);
-#ifdef DEBUG
-		if (ev->mask & IN_ISDIR)
-			printf("mkdir %s\n", subdir);
-		else
-			printf("link %s\n", subdir);
-#endif
+		if (debug_inotify) {
+			if (ev->mask & IN_ISDIR)
+				printf("mkdir %s\n", subdir);
+			else
+				printf("link %s\n", subdir);
+		}
 		switch (watcher->type) {
 		case TYPE_PORT_DIR:
 			watch_port(ctx, watcher->dirname, ev->name);
@@ -606,9 +609,10 @@ int process_inotify_event(struct etcd_cdc_ctx *ctx,
 	} else if (ev->mask & IN_DELETE_SELF) {
 		struct nvmet_port *port;
 
-#ifdef DEBUG
-		printf("rmdir %s type %d\n", watcher->dirname, watcher->type);
-#endif
+		if (debug_inotify)
+			printf("rmdir %s type %d\n",
+			       watcher->dirname, watcher->type);
+
 		/* Watcher is already removed */
 		list_del_init(&watcher->entry);
 		switch (watcher->type) {
@@ -625,12 +629,12 @@ int process_inotify_event(struct etcd_cdc_ctx *ctx,
 		char subdir[FILENAME_MAX + 1];
 
 		sprintf(subdir, "%s/%s", watcher->dirname, ev->name);
-#ifdef DEBUG
-		if (ev->mask & IN_ISDIR)
-			printf("rmdir %s\n", subdir);
-		else
-			printf("unlink %s\n", subdir);
-#endif
+		if (debug_inotify) {
+			if (ev->mask & IN_ISDIR)
+				printf("rmdir %s\n", subdir);
+			else
+				printf("unlink %s\n", subdir);
+		}
 		list_for_each_entry(tmp_watcher, &dir_watcher_list, entry) {
 			if (strcmp(tmp_watcher->dirname, subdir))
 				continue;
@@ -663,13 +667,11 @@ int process_inotify_event(struct etcd_cdc_ctx *ctx,
 			}
 		}
 	} else if (ev->mask & IN_MODIFY) {
-		char subdir[FILENAME_MAX + 1];
 		int allow_any;
 
-		sprintf(subdir, "%s/%s", watcher->dirname, ev->name);
-#ifdef DEBUG
-		printf("write %s\n", subdir);
-#endif
+		if (debug_inotify)
+			printf("write %s %s\n", watcher->dirname, ev->name);
+
 		switch (watcher->type) {
 		case TYPE_SUBSYS:
 			host = container_of(watcher,
@@ -697,6 +699,8 @@ int watch_port_dir(struct etcd_cdc_ctx *ctx)
 	DIR *pd;
 	struct dirent *pe;
 
+	if (ctx->debug > 1)
+		debug_inotify = ctx->debug - 1;
 	strcpy(ports_dir, ctx->configfs);
 	strcat(ports_dir, "/ports");
 	watch_directory(ports_dir, TYPE_PORT_DIR,
