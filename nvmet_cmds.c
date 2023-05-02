@@ -172,7 +172,8 @@ static int handle_connect(struct endpoint *ep, struct ep_qe *qe,
 	ep->qid = qid;
 
 	if (strcmp(connect->subsysnqn, NVME_DISC_SUBSYS_NAME) &&
-	    (!discovery_nqn || strcmp(connect->subsysnqn, discovery_nqn))) {
+	    (!ep->ctx->discovery_nqn ||
+	     strcmp(connect->subsysnqn, ep->ctx->discovery_nqn))) {
 		ep_err(ep, "subsystem '%s' not found",
 		       connect->subsysnqn);
 		return NVME_SC_CONNECT_INVALID_HOST;
@@ -258,11 +259,11 @@ static int handle_identify_ctrl(struct endpoint *ep, u8 *id_buf, u64 len)
 	id.kas = ep->kato_interval / 100; /* KAS is in units of 100 msecs */
 
 	id.cntrltype = ep->ctrl->ctrl_type;
-	if (!discovery_nqn) {
+	if (!ep->ctx->discovery_nqn) {
 		strcpy(id.subnqn, NVME_DISC_SUBSYS_NAME);
 		id.maxcmd = htole16(NVMF_DQ_DEPTH);
 	} else {
-		strcpy(id.subnqn, discovery_nqn);
+		strcpy(id.subnqn, ep->ctx->discovery_nqn);
 		id.maxcmd = htole16(ep->qsize);
 	}
 
@@ -317,11 +318,12 @@ static int format_disc_log(void *data, u64 data_offset,
 	if (!log_buf)
 		return 0;
 
+	ctrl_info(ep, "discovery log page len %lu", log_len);
 	if (log_len > data_len)
 		log_len = data_len;
 	if (data_offset > log_len) {
-		ctrl_err(ep, "invalid discovery log page offset %llu len %lu",
-			 data_offset, log_len);
+		ctrl_err(ep, "invalid discovery log page offset %llu len %llu",
+			 data_offset, data_len);
 		free(log_buf);
 		return 0;
 	}
