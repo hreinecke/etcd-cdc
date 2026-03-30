@@ -1,3 +1,11 @@
+/* SPDX-License-Identifier: DUAL GPL-2.0/BSD */
+/*
+ * configfs.h
+ * configfs function definitions for etcd discovery
+ *
+ * Copyright (c) 2025 Hannes Reinecke <hare@suse.de>
+ *
+ */
 #ifndef _CONFIGFS_H
 #define _CONFIGFS_H
 

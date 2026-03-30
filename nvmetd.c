@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: DUAL GPL-2.0/BSD */
 /*
  * nvmetd.c
- * Fanotify watcher for nvmet configfs
+ * inotify watcher for nvmet configfs
  *
  * Copyright (c) 2024 Hannes Reinecke <hare@suse.de>
  */

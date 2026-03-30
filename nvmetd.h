@@ -1,3 +1,9 @@
+/* SPDX-License-Identifier: DUAL GPL-2.0/BSD */
+/*
+ * nvmetd.h
+ *
+ * Copyright (c) 2024 Hannes Reinecke <hare@suse.de>
+ */
 #ifndef _NVMETD_H
 #define _NVMETD_H
 

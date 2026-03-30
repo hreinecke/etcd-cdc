@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: DUAL GPL-2.0/BSD */
 /*
  * daemon.c
- * NVME-over-TCP userspace daemon
+ * NVME target configfs <-> fuse interface
  *
  * Copyright (c) 2024 Hannes Reinecke <hare@suse.de>. All rights reserved.
  *
