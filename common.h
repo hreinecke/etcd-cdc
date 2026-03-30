@@ -32,69 +32,9 @@ extern bool configfs_debug;
 extern bool etcd_debug;
 extern bool http_debug;
 
-extern struct linked_list device_linked_list;
-extern struct linked_list port_linked_list;
-
 #define NVMET_CONFIGFS "/sys/kernel/config/nvmet"
-
 #define NOFUSE_NGUID_PREFIX "0efd376f6e756665"
 
 extern int stopped;
-
-#define ep_info(e, f, x...)				\
-	if (ep_debug) {					\
-		printf("ep %d: " f "\n",		\
-		       (e)->sockfd, ##x);		\
-		fflush(stdout);				\
-}
-
-#define ep_err(e, f, x...)				\
-	do {						\
-		fprintf(stderr, "ep %d: " f "\n",	\
-			(e)->sockfd, ##x);		\
-		fflush(stderr);				\
-	} while (0)
-
-
-#define ctrl_info(e, f, x...)					\
-	if (cmd_debug) {					\
-		if ((e)->ctrl) {				\
-			printf("ctrl %d qid %d: " f "\n",	\
-			       (e)->ctrl->cntlid,		\
-			       (e)->qid, ##x);			\
-		} else {					\
-			printf("ep %d: " f "\n",		\
-			       (e)->sockfd, ##x);		\
-		}						\
-		fflush(stdout);					\
-	}
-
-#define ctrl_err(e, f, x...)					\
-	do {							\
-		if ((e)->ctrl) {				\
-			fprintf(stderr,				\
-				"ctrl %d qid %d: " f "\n",	\
-				(e)->ctrl->cntlid,		\
-				(e)->qid, ##x);			\
-		} else {					\
-			fprintf(stderr, "ep %d: " f "\n",	\
-			       (e)->sockfd, ##x);		\
-		}						\
-		fflush(stderr);					\
-	} while (0)
-
-#define port_info(i, f, x...)			\
-	if (port_debug) {			\
-		printf("port %d: " f "\n",	\
-		       (i)->portid, ##x);	\
-		fflush(stdout);			\
-	}
-
-#define port_err(i, f, x...)				\
-	do {						\
-		fprintf(stderr, "port %d: " f "\n",	\
-			(i)->portid, ##x);		\
-		fflush(stderr);				\
-	} while (0)
 
 #endif
