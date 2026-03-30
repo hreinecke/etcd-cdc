@@ -1,13 +1,18 @@
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h>
 #include <stdbool.h>
+#include <stdlib.h>
 #include <errno.h>
+#include <limits.h>
+#include <sys/types.h>
 #include <uuid/uuid.h>
 
 #include "common.h"
-#include "etcd/backend.h"
-#include "etcd/client.h"
+#include "nvme.h"
 #include "firmware.h"
+#include "etcd/client.h"
+#include "etcd/backend.h"
 
 struct key_value_template {
 	const char *key;
@@ -1248,7 +1253,7 @@ int etcd_get_cluster_attr(struct etcd_ctx *ctx, const char *node,
 int etcd_set_cluster_id(struct etcd_ctx *ctx)
 {
 	char key[256], value[256], *eptr;
-	u64 cur_map = ULONG_MAX;
+	uint64_t cur_map = ULONG_MAX;
 	int ret, map_num;
 
 	for (map_num = 0; map_num < 4; map_num++) {
@@ -1280,7 +1285,7 @@ int etcd_set_cluster_id(struct etcd_ctx *ctx)
 	if (!cur_map) {
 		ctx->cluster_id = (map_num * 64);
 		cur_map = 1;
-		sprintf(value, "%llu" , cur_map);
+		sprintf(value, "%lu" , cur_map);
 		printf("%s: using cluster id %d\n",
 		       __func__, ctx->cluster_id);
 		ret = etcd_kv_store(ctx, key, value, strlen(value));
@@ -1291,7 +1296,7 @@ int etcd_set_cluster_id(struct etcd_ctx *ctx)
 	} else {
 		char new_value[256], cur_value[256];
 		int id = -1;
-		u64 tmp_map;
+		uint64_t tmp_map;
 
 		tmp_map = cur_map;
 		while (tmp_map) {
@@ -1300,7 +1305,7 @@ int etcd_set_cluster_id(struct etcd_ctx *ctx)
 				break;
 
 			tmp_map &= ~(1 << (id - 1));
-			printf("%s: checking id %u map %llu\n",
+			printf("%s: checking id %u map %lu\n",
 			       __func__, id, tmp_map);
 		}
 		ctx->cluster_id = (map_num * 64) + id;
@@ -1308,7 +1313,7 @@ int etcd_set_cluster_id(struct etcd_ctx *ctx)
 		       __func__, ctx->cluster_id);
 
 		cur_map |= (1 << id);
-		sprintf(new_value, "%llu", cur_map);
+		sprintf(new_value, "%lu", cur_map);
 		printf("%s: updating map %d from '%s' to '%s'\n",
 		       __func__, map_num, value, new_value);
 		ret = etcd_kv_txn_update(ctx, key, value, new_value,
@@ -1334,7 +1339,7 @@ int etcd_set_cluster_id(struct etcd_ctx *ctx)
 int etcd_unset_cluster_id(struct etcd_ctx *ctx)
 {
 	char key[256], old[256], new[256], cur[256], *eptr;
-	u64 cur_map = ULONG_MAX, id;
+	uint64_t cur_map = ULONG_MAX, id;
 	int ret, map;
 
 	id = ctx->cluster_id % 64;
@@ -1357,7 +1362,7 @@ int etcd_unset_cluster_id(struct etcd_ctx *ctx)
 	}
 
 	cur_map &= ~(1 << id);
-	sprintf(new, "%llu", cur_map);
+	sprintf(new, "%lu", cur_map);
 	printf("%s: updating map '%d from '%s' to '%s'\n",
 	       __func__, map, old, new);
 	ret = etcd_kv_txn_update(ctx, key, old, new,
@@ -1368,25 +1373,4 @@ int etcd_unset_cluster_id(struct etcd_ctx *ctx)
 			__func__, map, ret);
 	}
 	return ret;
-}
-
-int etcd_get_cntlid(struct etcd_ctx *ctx, const char *subsysnqn, u16 *cntlid)
-{
-	return -ENOTSUP;
-}
-
-int etcd_host_disc_entries(const char *hostnqn, u8 *log, int log_len)
-{
-	return -ENOTSUP;
-}
-
-int etcd_host_genctr(const char *hostnqn, int *genctr)
-{
-	return -ENOTSUP;
-}
-
-int etcd_subsys_identify_ctrl(const char *subsysnqn,
-			      struct nvme_id_ctrl *id)
-{
-	return -ENOTSUP;
 }

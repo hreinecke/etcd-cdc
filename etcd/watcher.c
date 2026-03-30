@@ -20,6 +20,7 @@
 #include <errno.h>
 
 #include "common.h"
+#include "nvme.h"
 #include "etcd/client.h"
 #include "etcd/backend.h"
 #include "configfs.h"

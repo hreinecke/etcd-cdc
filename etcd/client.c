@@ -16,7 +16,6 @@
 
 #include "etcd/base64.h"
 
-#include "common.h"
 #include "etcd/client.h"
 
 static char *default_etcd_prefix = "nofuse";

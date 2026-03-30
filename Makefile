@@ -1,39 +1,32 @@
 
-PRG = nvmet_etcd
-DISC = nvmet_discd
-TEST = etcd_tool
-DISC_OBJS = nvmet_daemon.o nvmet_tcp.o nvmet_cmds.o nvmet_endpoint.o nvmet_discovery.o etcd_client.o nvmet_lib.o
-PRG_OBJS = nvmet_etcd.o nvmet_inotify.o etcd_client.o nvmet_lib.o
-TEST_OBJS = etcd_tool.o etcd_client.o
-CFLAGS = -Wall -g
-B64 = base64.o
-LIBS = -ljson-c -lcurl -luuid
+DAEMON = daemon
+NVMETD = nvmetd
+CLIENT_OBJS = etcd/client.o etcd/neon.o etcd/base64.o
+DAEMON_OBJS = daemon.o etcd/backend.o etcd/watcher.o $(CLIENT_OBJS)
+NVMETD_OBJS = nvmetd.o $(CLIENT_OBJS)
+CFLAGS = -Wall -g -I. -I/usr/include/fuse3
+LIBS = -ljson-c -luuid -lneon
 
-all:	$(PRG) $(DISC) $(TEST)
+all:	$(DAEMON) $(NVMETD)
 
-$(B64): base64.c
-
-$(PRG): $(PRG_OBJS) $(B64)
+$(DAEMON): $(DAEMON_OBJS)
 	$(CC) $(CFLAGS) -o $(PRG) $^ $(LIBS)
 
-$(DISC): $(DISC_OBJS) $(B64)
-	$(CC) $(CFLAGS) -o $(DISC) $^ $(LIBS) -lpthread
+$(NVMETD): $(NVMETD_OBJS)
+	$(CC) $(CFLAGS) -o $(DISC) $^ $(LIBS) -lpthread -lfuse3
 
-$(TEST): $(TEST_OBJS) $(B64)
+$(TEST): $(TEST_OBJS)
 	$(CC) $(CFLAGS) -o $(TEST) $^ $(LIBS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $?
 
-clean:
-	$(RM) $(TEST_OBJS) $(PRG_OBJS) $(DISC_OBJS) $(PRG) $(TEST) $(DISC)
+firmware.h: gen_firmware_rev.sh
+	bash ./$< $@
 
-nvmet_etcd.c: etcd_client.h nvmet_etcd.h
-etcd_tool.c: etcd_client.h nvmet_etcd.h
-nvmet_inotify.c: etcd_client.h nvmet_etcd.h list.h
-nvmet_discovery.c: nvmet_common.h nvmet_tcp.h
-nvmet_cmds.c: nvmet_common.h nvmet_tcp.h
-nvmet_daemon.c: nvmet_common.h nvmet_endpoint.h nvmet_tcp.h
-nvmet_endpoint.c: nvmet_common.h nvmet_endpoint.h nvmet_tcp.h
-nvmet_tcp.c: types.h nvme.h nvme_tcp.h nvmet_common.h nvmet_tcp.h
-etcd_client.c: nvmet_etcd.h
+clean:
+	$(RM) firmware.h $(DAEMON_OBJS) $(NVMETD_OBJS) $(DAEMON) $(NVMETD)
+
+nvmetd.c: nvmetd.h etcd/client.h
+etcd/backend.c: common.h nvme.h firmware.h etcd/client.h etcd/backend.h
+
