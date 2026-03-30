@@ -28,11 +28,9 @@
 #include "etcd/backend.h"
 
 int stopped;
-bool tcp_debug;
-bool cmd_debug;
-bool ep_debug;
-bool port_debug;
 bool configfs_debug;
+bool etcd_debug;
+bool http_debug;
 
 struct nofuse_context {
 	struct etcd_ctx *etcd;
@@ -152,11 +150,9 @@ int main(int argc, char *argv[])
 		return 1;
 
 	if (ctx->debug) {
-		tcp_debug = true;
-		cmd_debug = true;
-		ep_debug = true;
-		port_debug = true;
+		configfs_debug = true;
 		etcd_debug = true;
+		http_debug = true;
 	}
 
 	ctx->etcd = etcd_init(ctx->url, ctx->node_name,

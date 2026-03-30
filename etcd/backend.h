@@ -110,8 +110,6 @@ int etcd_unset_cluster_id(struct etcd_ctx *ctx);
 int etcd_get_cntlid(struct etcd_ctx *ctx, const char *subsysnqn, u16 *cntlid);
 int etcd_host_disc_entries(const char *hostnqn, uint8_t *log, int log_len);
 int etcd_host_genctr(const char *hostnqn, int *genctr);
-int etcd_subsys_identify_ctrl(const char *subsysnqn,
-			      struct nvme_id_ctrl *id);
 
 #endif /* _ETCD_BACKEND_H */
 
