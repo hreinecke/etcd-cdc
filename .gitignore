@@ -1,6 +1,4 @@
-nvmet_etcd
-nvmet_discd
-etcd_tool
-etcd_discovery
+nvmetd-fuse
+nvmetd
 *.o
-
+firmware.h
