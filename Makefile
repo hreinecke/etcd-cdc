@@ -3,7 +3,7 @@ DAEMON = daemon
 NVMETD = nvmetd
 CLIENT_OBJS = etcd/client.o etcd/neon.o etcd/base64.o
 DAEMON_OBJS = daemon.o configfs.o fuse_etcd.o etcd/backend.o etcd/watcher.o $(CLIENT_OBJS)
-NVMETD_OBJS = nvmetd.o $(CLIENT_OBJS)
+NVMETD_OBJS = nvmetd.o inotify.o configfs.o etcd/backend.o etcd/watcher.o $(CLIENT_OBJS)
 CFLAGS = -Wall -g -I. -I/usr/include/fuse3
 LIBS = -ljson-c -luuid -lneon
 
@@ -29,6 +29,8 @@ clean:
 
 daemon.c: common.h nvme.h etcd/client.h etcd/backend.h
 nvmetd.c: nvmetd.h etcd/client.h
+inotify.c: common.h utils.h configfs.h etcd/client.h etcd/backend.h nvmetd.h
 configfs.c: common.h configfs.h utils.h etcd/client.h etcd/backend.h
+fuse_etcd.c: common.h nvme.h etcd/client.h etcd/backend.h
 etcd/backend.c: common.h nvme.h firmware.h etcd/client.h etcd/backend.h
 

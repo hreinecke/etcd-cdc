@@ -1,241 +1,71 @@
+/* SPDX-License-Identifier: DUAL GPL-2.0/BSD */
 /*
- * nvmet_inotify.c
+ * inotify.c
  * inotify watcher for nvmet configfs
  *
  * Copyright (c) 2021 Hannes Reinecke <hare@suse.de>
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License version 2 as
- *  published by the Free Software Foundation.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software Foundation,
- *  Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  *
  */
 #define _GNU_SOURCE
 
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include <errno.h>
 #include <limits.h>
 #include <dirent.h>
+#include <pthread.h>
 #include <sys/types.h>
 #include <fcntl.h>
 
 #include <sys/inotify.h>
 
-#include "list.h"
-#include "nvmet_common.h"
-#include "nvmet_etcd.h"
+#include "common.h"
+#include "etcd/client.h"
+#include "utils.h"
+#include "configfs.h"
+#include "etcd/backend.h"
+#include "nvmetd.h"
 
-LIST_HEAD(dir_watcher_list);
+#define INOTIFY_BUFFER_SIZE 4096
 
-int debug_inotify;
-
-enum watcher_type {
-	TYPE_PORT_DIR,		/* ports */
-	TYPE_PORT,		/* ports/<port> */
-	TYPE_PORT_SUBSYS_DIR,	/* ports/<port>/subsystems */
-	TYPE_PORT_SUBSYS,	/* ports/<port>/subsystems/<subsys> */
-	TYPE_SUBSYS_DIR,	/* subsystems */
-	TYPE_SUBSYS,		/* subsystems/<subsys> */
-	TYPE_SUBSYS_HOSTS_DIR,	/* subsystems/<subsys>/allowed_hosts */
-	TYPE_SUBSYS_HOST,	/* subsystems/<subsys>/allowed_hosts/<host> */
-};
+LINKED_LIST(dir_watcher_list);
 
 struct dir_watcher {
-	struct list_head entry;
-	enum watcher_type type;
+	struct watcher_ctx *ctx;
+	struct linked_list entry;
+	int flags;
 	int wd;
 	char dirname[FILENAME_MAX];
 };
 
-/* TYPE_PORT */
-struct nvmet_port {
-	struct dir_watcher watcher;
-	char port_id[256];
-	char trtype[256];
-	char traddr[256];
-	char trsvcid[256];
-	char adrfam[256];
-};
-
-/* TYPE_PORT_SUBSYS */
-struct nvmet_port_subsys {
-	struct dir_watcher watcher;
-	struct nvmet_port *port;
-	char subsysnqn[256];
-};
-
-/* TYPE_SUBSYS_HOST */
-struct nvmet_subsys_host {
-	struct dir_watcher watcher;
-	struct nvmet_port_subsys *subsys;
-	char hostnqn[256];
-};
-
-static struct nvmet_port *find_port_from_subsys(char *port_subsys_dir)
-{
-	struct dir_watcher *watcher;
-
-	list_for_each_entry(watcher, &dir_watcher_list, entry) {
-		if (watcher->type != TYPE_PORT)
-			continue;
-		if (strncmp(watcher->dirname, port_subsys_dir,
-			    strlen(watcher->dirname)))
-			continue;
-		return container_of(watcher, struct nvmet_port, watcher);
-	}
-	fprintf(stderr, "No port found for subsys %s\n", port_subsys_dir);
-	return NULL;
-}
-
-static struct nvmet_port_subsys *find_subsys(char *subnqn)
-{
-	struct dir_watcher *watcher;
-	struct nvmet_port_subsys *port_subsys;
-
-	list_for_each_entry(watcher, &dir_watcher_list, entry) {
-		if (watcher->type != TYPE_PORT_SUBSYS)
-			continue;
-		port_subsys = container_of(watcher, struct nvmet_port_subsys,
-					   watcher);
-		if (strcmp(port_subsys->subsysnqn, subnqn))
-			continue;
-		return port_subsys;
-	}
-	if (debug_inotify)
-		printf("Subsys %s: no ports found\n", subnqn);
-	return NULL;
-}
-
-static struct nvmet_port_subsys *find_subsys_from_host(char *subsys_host_dir)
-{
-	char subnqn[256], *p;
-
-	p = strchr(subsys_host_dir, '/');
-	do {
-		if (!p)
-			break;
-		p++;
-		if (!strncmp(p, "subsystems", 10)) {
-			strncpy(subnqn, p + 11, 256);
-			break;
-		}
-	} while ((p = strchr(p, '/')));
-	if (!strlen(subnqn)) {
-		fprintf(stderr, "Invalid subsys path %s\n", subsys_host_dir);
-		return NULL;
-	}
-	p = strchr(subnqn, '/');
-	if (p)
-		*p = '\0';
-
-	return find_subsys(subnqn);
-}
-
-static void gen_host_kv_key(struct etcd_cdc_ctx *ctx,
-			    struct nvmet_subsys_host *host, enum kv_key_op op)
-{
-	struct nvmet_port_subsys *subsys = host->subsys;
-	struct nvmet_port *port;
-	char key[1024];
-	char value[1024];
-
-	if (!subsys)
-		return;
-	port = subsys->port;
-	if (!port)
-		return;
-
-	sprintf(key, "%s/%s/%s/%s", ctx->prefix,
-		strlen(host->hostnqn) ? host->hostnqn : "",
-		subsys->subsysnqn, port->port_id);
-	if (op == KV_KEY_OP_ADD) {
-		sprintf(value,"trtype=%s,traddr=%s,adrfam=%s",
-			port->trtype, port->traddr, port->adrfam);
-		if (strlen(port->trsvcid)) {
-			strcat(value,",trsvcid=");
-			strcat(value, port->trsvcid);
-		}
-		printf("add key %s: %s\n", key, value);
-		if (etcd_kv_put(ctx, key, value, true) < 0) {
-			fprintf(stderr, "cannot add key %s, error %d\n",
-				key, errno);
-			return;
-		}
-	} else {
-		printf("delete key %s\n", key);
-		if (etcd_kv_delete(ctx, key) < 0) {
-			fprintf(stderr, "cannot remove key %s, error %d\n",
-				key, errno);
-			return;
-		}
-	}
-	nvmet_etcd_set_genctr(ctx, 1);
-}
-
-static void gen_subsys_kv_key(struct etcd_cdc_ctx *ctx,
-			      struct nvmet_port_subsys *subsys,
-			      enum kv_key_op op)
-{
-	struct dir_watcher *watcher;
-	struct nvmet_subsys_host *host;
-
-	list_for_each_entry(watcher, &dir_watcher_list, entry) {
-		if (watcher->type != TYPE_SUBSYS_HOST)
-			continue;
-		host = container_of(watcher, struct nvmet_subsys_host, watcher);
-		if (op == KV_KEY_OP_ADD && !host->subsys) {
-			host->subsys = find_subsys_from_host(watcher->dirname);
-			if (debug_inotify && host->subsys)
-				printf("updated subsys for host %s\n",
-				       host->hostnqn);
-		}
-		if (host->subsys == subsys) {
-			gen_host_kv_key(ctx, host, op);
-			if (op == KV_KEY_OP_DELETE) {
-				host->subsys = NULL;
-				if (debug_inotify)
-					printf("removed subsys for host %s\n",
-					       host->hostnqn);
-			}
-		}
-	}
-}
-
-static struct dir_watcher *add_watch(struct dir_watcher *watcher, int flags)
+static struct dir_watcher *add_watch(struct dir_watcher *watcher)
 {
 	struct dir_watcher *tmp;
+	const char *p;
 
-	INIT_LIST_HEAD(&watcher->entry);
+	INIT_LINKED_LIST(&watcher->entry);
 	list_for_each_entry(tmp, &dir_watcher_list, entry) {
-		if (tmp->type != watcher->type)
-			continue;
 		if (strcmp(tmp->dirname, watcher->dirname))
 			continue;
 		return tmp;
 	}
-	watcher->wd = inotify_add_watch(inotify_fd, watcher->dirname,
-					flags);
+	watcher->wd = inotify_add_watch(watcher->ctx->inotify_fd,
+					watcher->dirname, watcher->flags);
 	if (watcher->wd < 0) {
 		fprintf(stderr,
-			"failed to add inotify watch to '%s', error %d\n",
-			watcher->dirname, errno);
+			"%s: failed to add inotify watch to '%s', error %d\n",
+			__func__, watcher->dirname, errno);
 		return watcher;
 	}
-	if (debug_inotify)
-		printf("add inotify watch %d type %d to %s\n",
-		       watcher->wd, watcher->type, watcher->dirname);
+	if (inotify_debug) {
+		p = watcher->dirname + strlen(watcher->ctx->etcd->configfs) + 1;
+		printf("%s: add inotify watch %d flags %d to %s\n",
+		       __func__, watcher->wd, watcher->flags, p);
+	}
 	list_add(&watcher->entry, &dir_watcher_list);
 	return 0;
 }
@@ -243,274 +73,160 @@ static struct dir_watcher *add_watch(struct dir_watcher *watcher, int flags)
 static int remove_watch(struct dir_watcher *watcher)
 {
 	int ret;
+	const char *p;
 
-	ret = inotify_rm_watch(inotify_fd, watcher->wd);
+	ret = inotify_rm_watch(watcher->ctx->inotify_fd, watcher->wd);
 	if (ret < 0)
 		fprintf(stderr, "Failed to remove inotify watch on '%s'\n",
 			watcher->dirname);
-	if (debug_inotify)
-		printf("remove inotify watch %d type %d from '%s'\n",
-		       watcher->wd, watcher->type, watcher->dirname);
+	if (inotify_debug) {
+		p = watcher->dirname + strlen(watcher->ctx->etcd->configfs) + 1;
+		printf("remove inotify watch %d from '%s'\n",
+		       watcher->wd, p);
+	}
 	list_del_init(&watcher->entry);
 	return ret;
 }
 
-static int watch_directory(char *dirname, enum watcher_type type, int flags)
+static struct dir_watcher *
+allocate_watch(struct watcher_ctx *ctx, const char *dirname,
+	       const char *filename, unsigned int flags)
 {
 	struct dir_watcher *watcher, *tmp;
 
 	watcher = malloc(sizeof(struct dir_watcher));
 	if (!watcher) {
 		fprintf(stderr, "Failed to allocate dirwatch\n");
-		return -1;
+		errno = ENOMEM;
+		return NULL;
 	}
 	strcpy(watcher->dirname, dirname);
-	watcher->type = type;
-	tmp = add_watch(watcher, flags);
+	strcat(watcher->dirname, "/");
+	strcat(watcher->dirname, filename);
+	watcher->ctx = ctx;
+	watcher->flags = flags;
+	tmp = add_watch(watcher);
 	if (tmp) {
 		if (tmp == watcher)
 			free(watcher);
-		return -1;
+		errno = EAGAIN;
+		watcher = NULL;
 	}
- 	return 0;
+	return watcher;
 }
 
-static int port_read_attr(char *ports_dir, struct nvmet_port *port, char *attr)
+static int mark_file(struct watcher_ctx *ctx, const char *dirname,
+		     const char *filename, unsigned int type)
 {
-	char attr_path[PATH_MAX + 1];
-	char *attr_buf, *p;
-	int fd, len;
+	struct dir_watcher *wd;
+	int flags = 0, ret = 0;
 
-	if (!strcmp(attr, "trtype"))
-		attr_buf = port->trtype;
-	else if (!strcmp(attr, "traddr"))
-		attr_buf = port->traddr;
-	else if (!strcmp(attr, "trsvcid"))
-		attr_buf = port->trsvcid;
-	else if (!strcmp(attr, "adrfam"))
-		attr_buf = port->adrfam;
-	else {
-		fprintf(stderr, "Port %s: Invalid attribute '%s'\n",
-			port->port_id, attr);
-		return -1;
+	switch (type) {
+	case DT_DIR:
+		flags = IN_CREATE | IN_DELETE | IN_MODIFY;
+		break;
+	case DT_LNK:
+		flags = IN_DELETE_SELF;
+		break;
+	case DT_REG:
+		flags = 0;
+		break;
+	default:
+		fprintf(stderr, "%s/%s: unknown type %d\n",
+			dirname, filename, type);
+		return -EINVAL;
 	}
-
-	sprintf(attr_path, "%s/%s/addr_%s", ports_dir, port->port_id, attr);
-	fd = open(attr_path, O_RDONLY);
-	if (fd < 0) {
-		fprintf(stderr, "Port %s: Failed to open '%s', error %d\n",
-			port->port_id, attr_path, errno);
-		return -1;
+	if (flags) {
+		wd = allocate_watch(ctx, dirname, filename, flags);
+		if (!wd) {
+			fprintf(stderr, "%s/%s: failed to allocate watcher\n",
+				dirname, filename);
+			return -EINVAL;
+		}
 	}
-	len = read(fd, attr_buf, 256);
-	if (len < 0)
-		memset(attr_buf, 0, 256);
-	else {
-		p = &attr_buf[len - 1];
-		if (*p == '\n')
-			*p = '\0';
-	}
-	close(fd);
-	return len;
+	ret = configfs_update_key(ctx->etcd, dirname, filename);
+	return ret;
 }
 
-static struct nvmet_port *update_port(char *ports_dir, char *port_id)
+int mark_inotify(struct watcher_ctx *ctx, const char *dir,
+		 const char *file)
 {
-	struct nvmet_port *port;
-
-	port = malloc(sizeof(struct nvmet_port));
-	if (!port) {
-		fprintf(stderr, "Port %s: Failed to allocate port\n",
-			port_id);
-		return NULL;
-	}
-	strcpy(port->port_id, port_id);
-	port_read_attr(ports_dir, port, "trtype");
-	port_read_attr(ports_dir, port, "traddr");
-	port_read_attr(ports_dir, port, "trsvcid");
-	port_read_attr(ports_dir, port, "adrfam");
-	return port;
-}
-
-static void watch_port_subsys(struct etcd_cdc_ctx *ctx,
-			      char *port_subsys_dir, char *subsysnqn)
-{
-	struct nvmet_port_subsys *subsys;
-	struct dir_watcher *watcher;
-
-	subsys = malloc(sizeof(struct nvmet_port_subsys));
-	if (!subsys) {
-		fprintf(stderr, "Failed to allocate subsys %s\n",
-			subsysnqn);
-		return;
-	}
-	strcpy(subsys->subsysnqn, subsysnqn);
-	strcpy(subsys->watcher.dirname, port_subsys_dir);
-	strcat(subsys->watcher.dirname, "/");
-	strcat(subsys->watcher.dirname, subsysnqn);
-	subsys->watcher.type = TYPE_PORT_SUBSYS;
-	watcher = add_watch(&subsys->watcher, IN_DELETE_SELF);
-	if (watcher) {
-		if (watcher == &subsys->watcher)
-			free(subsys);
-		return;
-	}
-	subsys->port = find_port_from_subsys(port_subsys_dir);
-	gen_subsys_kv_key(ctx, subsys, KV_KEY_OP_ADD);
-}
-	
-static void watch_port(struct etcd_cdc_ctx *ctx,
-		       char *ports_dir, char *port_id)
-{
-	struct nvmet_port *port;
-	struct dir_watcher *watcher;
-	char subsys_dir[PATH_MAX + 1];
+	char *dirname;
 	DIR *sd;
 	struct dirent *se;
+	int ret;
 
-	port = update_port(ports_dir, port_id);
-	if (!port)
-		return;
-
-	strcpy(subsys_dir, ports_dir);
-	strcat(subsys_dir, "/");
-	strcat(subsys_dir, port_id);
-	strcpy(port->watcher.dirname, subsys_dir);
-	port->watcher.type = TYPE_PORT;
-	watcher = add_watch(&port->watcher, IN_DELETE_SELF);
-	if (watcher) {
-		if (watcher == &port->watcher)
-			free(port);
-		return;
+	if (file) {
+		ret = asprintf(&dirname, "%s/%s", dir, file);
+		if (ret < 0)
+			return -ENOMEM;
+	} else {
+		dirname = (char *)dir;
 	}
-
-	strcat(subsys_dir, "/subsystems");
-	watch_directory(subsys_dir, TYPE_PORT_SUBSYS_DIR,
-			IN_CREATE | IN_DELETE | IN_DELETE_SELF);
-
-	sd = opendir(subsys_dir);
+	ret = 0;
+	sd = opendir(dirname);
 	if (!sd) {
-		fprintf(stderr, "Cannot open %s\n", subsys_dir);
-		return;
+		fprintf(stderr, "Cannot open %s\n", dirname);
+		if (dirname != dir)
+			free(dirname);
+		return -errno;
 	}
 	while ((se = readdir(sd))) {
 		if (!strcmp(se->d_name, ".") ||
 		    !strcmp(se->d_name, ".."))
 			continue;
-		watch_port_subsys(ctx, subsys_dir, se->d_name);
+		if (inotify_debug) {
+			char *type_name;
+
+			if (se->d_type == DT_DIR)
+				type_name = "dir";
+			else if (se->d_type == DT_LNK)
+				type_name = "link";
+			else if (se->d_type == DT_REG)
+				type_name = "file";
+			else
+				type_name = "unknown";
+			printf("%s: checking %s %s %s\n",
+			       __func__, type_name, dirname, se->d_name);
+		}
+		if (!strcmp(se->d_name, "passthru"))
+			continue;
+
+		ret = mark_file(ctx, dirname, se->d_name, se->d_type);
+		if (ret < 0)
+			break;
+
+		if (se->d_type == DT_DIR) {
+			ret = mark_inotify(ctx, dirname, se->d_name);
+			if (ret < 0)
+				break;
+		}
 	}
 	closedir(sd);
+	if (dirname != dir)
+		free(dirname);
+	return ret;
 }
 
-static void watch_subsys_hosts(struct etcd_cdc_ctx *ctx,
-			       char *hosts_dir, char *hostnqn)
+static void unmark_inotify(struct watcher_ctx *ctx, struct dir_watcher *self,
+			   const char *dirname)
 {
-	struct nvmet_subsys_host *host;
-	struct dir_watcher *watcher;
+	struct dir_watcher *watcher, *tmp_watch;
 
-	host = malloc(sizeof(struct nvmet_subsys_host));
-	if (!host) {
-		fprintf(stderr, "Cannot allocate %s\n", hostnqn);
-		return;
-	}
-	strcpy(host->hostnqn, hostnqn);
-	strcpy(host->watcher.dirname, hosts_dir);
-	strcat(host->watcher.dirname, "/");
-	strcat(host->watcher.dirname, hostnqn);
-	host->watcher.type = TYPE_SUBSYS_HOST;
-
-	watcher = add_watch(&host->watcher, IN_DELETE_SELF);
-	if (watcher) {
-		if (watcher == &host->watcher)
-			free(host);
-		return;
-	}
-	host->subsys = find_subsys_from_host(hosts_dir);
-	gen_host_kv_key(ctx, host, KV_KEY_OP_ADD);
-}
-
-static int attr_read_int(char *attr_path)
-{
-	char attr_buf[256], *p;
-	int fd, len;
-
-	fd = open(attr_path, O_RDONLY);
-	if (fd < 0) {
-		fprintf(stderr, "Failed to open '%s', error %d\n",
-			attr_path, errno);
-		return -1;
-	}
-	len = read(fd, attr_buf, 256);
-	if (len < 0)
-		memset(attr_buf, 0, 256);
-	else {
-		len = strtoul(attr_buf, &p, 10);
-		if (attr_buf == p)
-			len = -1;
-	}
-	close(fd);
-	return len;
-}
-
-static void watch_subsys_allow_any(struct etcd_cdc_ctx *ctx,
-				   char *subsys_dir, char *subnqn)
-{
-	struct nvmet_subsys_host *host;
-	struct dir_watcher *watcher;
-	int allow_any;
-
-	host = malloc(sizeof(struct nvmet_subsys_host));
-	if (!host) {
-		fprintf(stderr, "Cannot allocate %s\n", subnqn);
-		return;
-	}
-	host->hostnqn[0] = '\0';
-	sprintf(host->watcher.dirname, "%s/%s/attr_allow_any_host",
-		subsys_dir, subnqn);
-	host->watcher.type = TYPE_SUBSYS;
-	watcher = add_watch(&host->watcher, IN_MODIFY);
-	if (watcher) {
-		if (watcher == &host->watcher)
-			free(host);
-		return;
-	}
-	host->subsys = find_subsys(subnqn);
-	allow_any = attr_read_int(host->watcher.dirname);
-	if (allow_any)
-		gen_host_kv_key(ctx, host, KV_KEY_OP_ADD);
-}
-
-static void watch_subsys(struct etcd_cdc_ctx *ctx,
-			 char *subsys_dir, char *subnqn)
-{
-	char hosts_dir[PATH_MAX + 1];
-	DIR *hd;
-	struct dirent *he;
-
-	watch_subsys_allow_any(ctx, subsys_dir, subnqn);
-
-	sprintf(hosts_dir, "%s/%s/allowed_hosts",
-		subsys_dir, subnqn);
-	watch_directory(hosts_dir, TYPE_SUBSYS_HOSTS_DIR,
-			IN_CREATE | IN_DELETE | IN_DELETE_SELF);
-	hd = opendir(hosts_dir);
-	if (!hd) {
-		fprintf(stderr, "Cannot open %s\n", hosts_dir);
-		return;
-	}
-	while ((he = readdir(hd))) {
-		if (!strcmp(he->d_name, ".") ||
-		    !strcmp(he->d_name, ".."))
+	list_for_each_entry_safe(watcher, tmp_watch, &dir_watcher_list, entry) {
+		if (self && watcher == self)
 			continue;
-		watch_subsys_hosts(ctx, hosts_dir, he->d_name);
+		if (!strncmp(watcher->dirname, dirname, strlen(dirname))) {
+			remove_watch(watcher);
+			free(watcher);
+		}
 	}
-	closedir(hd);
 }
 
 static void
 display_inotify_event(struct inotify_event *ev)
 {
-	if (!debug_inotify)
+	if (!inotify_debug)
 		return;
 	printf("inotify wd = %d; ", ev->wd);
 	if (ev->cookie > 0)
@@ -552,14 +268,12 @@ display_inotify_event(struct inotify_event *ev)
 	printf("\n");
 }
 
-int process_inotify_event(struct etcd_cdc_ctx *ctx,
-			  char *iev_buf, int iev_len)
+int process_inotify_event(char *iev_buf, int iev_len)
 {
 	struct inotify_event *ev;
 	struct dir_watcher *tmp_watcher, *watcher = NULL;
-	struct nvmet_subsys_host *host;
-	struct nvmet_port_subsys *subsys;
-	int ev_len;
+	char subdir[FILENAME_MAX + 1];
+	int ev_len, ret;
 
 	ev = (struct inotify_event *)iev_buf;
 	display_inotify_event(ev);
@@ -574,185 +288,146 @@ int process_inotify_event(struct etcd_cdc_ctx *ctx,
 		}
 	}
 	if (!watcher) {
-		if (debug_inotify)
+		if (inotify_debug)
 			printf("No watcher for wd %d\n", ev->wd);
 		return ev_len;
 	}
 	if (ev->mask & IN_CREATE) {
-		char subdir[FILENAME_MAX + 1];
-
 		sprintf(subdir, "%s/%s", watcher->dirname, ev->name);
-		if (debug_inotify) {
+		if (inotify_debug) {
 			if (ev->mask & IN_ISDIR)
 				printf("mkdir %s\n", subdir);
 			else
 				printf("link %s\n", subdir);
 		}
-		switch (watcher->type) {
-		case TYPE_PORT_DIR:
-			watch_port(ctx, watcher->dirname, ev->name);
-			break;
-		case TYPE_PORT_SUBSYS_DIR:
-			watch_port_subsys(ctx, watcher->dirname, ev->name);
-			break;
-		case TYPE_SUBSYS_DIR:
-			watch_subsys(ctx, watcher->dirname, ev->name);
-			break;
-		case TYPE_SUBSYS_HOSTS_DIR:
-			watch_subsys_hosts(ctx, watcher->dirname, ev->name);
-			break;
-		default:
-			fprintf(stderr, "Unhandled create type %d\n",
-				watcher->type);
-			break;
-		}
+		ret = mark_file(watcher->ctx, watcher->dirname, ev->name,
+				(ev->mask & IN_ISDIR) ? DT_DIR : DT_LNK);
+		if (ev->mask & IN_ISDIR)
+			mark_inotify(watcher->ctx, watcher->dirname,
+				     ev->name);
 	} else if (ev->mask & IN_DELETE_SELF) {
-		struct nvmet_port *port;
-
-		if (debug_inotify)
-			printf("rmdir %s type %d\n",
-			       watcher->dirname, watcher->type);
-
-		/* Watcher is already removed */
-		list_del_init(&watcher->entry);
-		switch (watcher->type) {
-		case TYPE_PORT:
-			port = container_of(watcher,
-					    struct nvmet_port, watcher);
-			free(port);
-			break;
-		default:
-			free(watcher);
-			break;
-		}
+		if (inotify_debug)
+			printf("unlink %s\n", watcher->dirname);
+		unmark_inotify(watcher->ctx, watcher, watcher->dirname);
 	} else if (ev->mask & IN_DELETE) {
 		char subdir[FILENAME_MAX + 1];
+		char *key;
 
 		sprintf(subdir, "%s/%s", watcher->dirname, ev->name);
-		if (debug_inotify) {
+		if (inotify_debug) {
 			if (ev->mask & IN_ISDIR)
 				printf("rmdir %s\n", subdir);
 			else
 				printf("unlink %s\n", subdir);
 		}
-		list_for_each_entry(tmp_watcher, &dir_watcher_list, entry) {
-			if (strcmp(tmp_watcher->dirname, subdir))
-				continue;
-			watcher = tmp_watcher;
-		}
-		if (watcher) {
-			remove_watch(watcher);
-			switch (watcher->type) {
-			case TYPE_SUBSYS_HOST:
-				host = container_of(watcher,
-						    struct nvmet_subsys_host,
-						    watcher);
-				gen_host_kv_key(ctx, host, KV_KEY_OP_DELETE);
-				host->subsys = NULL;
-				free(host);
-				break;
-			case TYPE_PORT_SUBSYS:
-				subsys = container_of(watcher,
-						      struct nvmet_port_subsys,
-						      watcher);
-				gen_subsys_kv_key(ctx, subsys, KV_KEY_OP_DELETE);
-				subsys->port = NULL;
-				free(subsys);
-				break;
-			default:
-				fprintf(stderr, "Unhandled delete type %d\n",
-					watcher->type);
-				free(watcher);
-				break;
-			}
-		}
+		unmark_inotify(watcher->ctx, NULL, subdir);
+		key = path_to_key(watcher->ctx->etcd, subdir);
+		if (inotify_debug)
+			printf("%s: delete key %s\n",
+			       __func__, key);
+		ret = etcd_kv_delete(watcher->ctx->etcd, key);
+		if (ret)
+			fprintf(stderr, "%s: delete key %s error %d\n",
+				__func__, key, ret);
+		free(key);
 	} else if (ev->mask & IN_MODIFY) {
-		int allow_any;
-
-		if (debug_inotify)
+		if (inotify_debug)
 			printf("write %s %s\n", watcher->dirname, ev->name);
-
-		switch (watcher->type) {
-		case TYPE_SUBSYS:
-			host = container_of(watcher,
-					    struct nvmet_subsys_host,
-					    watcher);
-			allow_any = attr_read_int(watcher->dirname);
-			if (allow_any)
-				gen_host_kv_key(ctx, host, KV_KEY_OP_ADD);
-			else
-				gen_host_kv_key(ctx, host, KV_KEY_OP_DELETE);
-			break;
-		default:
-			fprintf(stderr, "unhandled modify type %d\n",
-				watcher->type);
-			free(watcher);
-			break;
-		}
+		configfs_update_key(watcher->ctx->etcd, watcher->dirname,
+				    ev->name);
 	}
 	return ev_len;
 }
 
-int watch_port_dir(struct etcd_cdc_ctx *ctx)
+int start_inotify(struct watcher_ctx *ctx)
 {
-	char ports_dir[PATH_MAX + 1];
-	DIR *pd;
-	struct dirent *pe;
+	int ret;
 
-	if (ctx->debug > 1)
-		debug_inotify = ctx->debug - 1;
-	strcpy(ports_dir, ctx->configfs);
-	strcat(ports_dir, "/ports");
-	watch_directory(ports_dir, TYPE_PORT_DIR,
-			IN_CREATE | IN_DELETE_SELF);
+	ctx->inotify_fd = inotify_init();
+	if (ctx->inotify_fd < 0) {
+		fprintf(stderr, "inotify_init() failed, error %d\n", errno);
+		return -errno;
+	}
 
-	pd = opendir(ports_dir);
-	if (!pd) {
-		fprintf(stderr, "Cannot open %s\n", ports_dir);
-		return -1;
+	ret = mark_inotify(ctx, ctx->etcd->configfs, NULL);
+	if (ret < 0) {
+		close(ctx->inotify_fd);
+		ctx->inotify_fd = -1;
 	}
-	while ((pe = readdir(pd))) {
-		if (!strcmp(pe->d_name, ".") ||
-		    !strcmp(pe->d_name, ".."))
-			continue;
-		watch_port(ctx, ports_dir, pe->d_name);
-	}
-	closedir(pd);
-	return 0;
+	return ret;
 }
 
-int watch_subsys_dir(struct etcd_cdc_ctx *ctx)
-{
-	char subsys_dir[PATH_MAX + 1];
-	DIR *sd;
-	struct dirent *se;
-
-	strcpy(subsys_dir, ctx->configfs);
-	strcat(subsys_dir, "/subsystems");
-	watch_directory(subsys_dir, TYPE_SUBSYS_DIR,
-			IN_CREATE | IN_DELETE_SELF);
-
-	sd = opendir(subsys_dir);
-	if (!sd) {
-		fprintf(stderr, "Cannot open %s\n", subsys_dir);
-		return -1;
-	}
-	while ((se = readdir(sd))) {
-		if (!strcmp(se->d_name, ".") ||
-		    !strcmp(se->d_name, ".."))
-			continue;
-		watch_subsys(ctx, subsys_dir, se->d_name);
-	}
-	closedir(sd);
-	return 0;
-}
-
-void cleanup_watcher(void)
+void stop_inotify(struct watcher_ctx *ctx)
 {
 	struct dir_watcher *watcher, *tmp_watch;
 
-    	list_for_each_entry_safe(watcher, tmp_watch, &dir_watcher_list, entry) {
+	list_for_each_entry_safe(watcher, tmp_watch, &dir_watcher_list, entry) {
 		remove_watch(watcher);
 		free(watcher);
 	}
+	close(ctx->inotify_fd);
+	ctx->inotify_fd = -1;
+}
+
+void *inotify_loop(void *arg)
+{
+	struct watcher_ctx *ctx = arg;
+	fd_set rfd;
+	struct timeval tmo;
+	char event_buffer[INOTIFY_BUFFER_SIZE]
+		__attribute__ ((aligned(__alignof__(struct inotify_event))));
+
+	while (!stopped) {
+		int rlen, ret;
+		char *iev_buf;
+
+		ret = etcd_lease_keepalive(ctx->etcd);
+		if (ret < 0) {
+			fprintf(stderr,
+				"failed to update lease, error %d\n", ret);
+			break;
+		}
+
+		FD_ZERO(&rfd);
+		FD_SET(ctx->inotify_fd, &rfd);
+		tmo.tv_sec = ctx->etcd->ttl / 2;
+		tmo.tv_usec = 0;
+		ret = select(ctx->inotify_fd + 1, &rfd, NULL, NULL, &tmo);
+		if (ret < 0) {
+			if (errno == EINTR)
+				continue;
+			fprintf(stderr, "select returned %d", errno);
+			break;
+		}
+		if (ret == 0) {
+			/* Select timeout, refresh lease */
+			continue;
+		}
+		if (!FD_ISSET(ctx->inotify_fd, &rfd)) {
+			fprintf(stderr,
+				"select returned for invalid fd");
+			continue;
+		}
+		rlen = read(ctx->inotify_fd, event_buffer, INOTIFY_BUFFER_SIZE);
+		if (rlen < 0) {
+			fprintf(stderr, "error %d on reading inotify event",
+				errno);
+			continue;
+		}
+		for (iev_buf = event_buffer;
+		     iev_buf < event_buffer + rlen; ) {
+			int iev_len;
+
+			iev_len = process_inotify_event(iev_buf,
+							event_buffer + rlen - iev_buf);
+			if (iev_len < 0) {
+				fprintf(stderr, "Failed to process inotify\n");
+				break;
+			}
+			iev_buf += iev_len;
+		}
+	}
+
+	pthread_exit(NULL);
+	return NULL;
 }
