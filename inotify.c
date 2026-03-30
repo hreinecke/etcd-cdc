@@ -25,18 +25,18 @@
 
 #include "common.h"
 #include "etcd/client.h"
-#include "utils.h"
 #include "configfs.h"
 #include "etcd/backend.h"
 #include "nvmetd.h"
+#include "list.h"
 
 #define INOTIFY_BUFFER_SIZE 4096
 
-LINKED_LIST(dir_watcher_list);
+LIST_HEAD(dir_watcher_list);
 
 struct dir_watcher {
 	struct watcher_ctx *ctx;
-	struct linked_list entry;
+	struct list_head entry;
 	int flags;
 	int wd;
 	char dirname[FILENAME_MAX];
@@ -47,7 +47,7 @@ static struct dir_watcher *add_watch(struct dir_watcher *watcher)
 	struct dir_watcher *tmp;
 	const char *p;
 
-	INIT_LINKED_LIST(&watcher->entry);
+	INIT_LIST_HEAD(&watcher->entry);
 	list_for_each_entry(tmp, &dir_watcher_list, entry) {
 		if (strcmp(tmp->dirname, watcher->dirname))
 			continue;

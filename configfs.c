@@ -24,35 +24,35 @@
 #include "common.h"
 #include "etcd/client.h"
 #include "configfs.h"
-#include "utils.h"
 #include "etcd/backend.h"
+#include "list.h"
 
 struct ana_group {
-	struct linked_list list;
+	struct list_head list;
 	int grpid;
-	struct linked_list namespaces;
-	struct linked_list optimized;
-	struct linked_list non_optimized;
-	struct linked_list inaccessible;
-	struct linked_list persistent_loss;
+	struct list_head namespaces;
+	struct list_head optimized;
+	struct list_head non_optimized;
+	struct list_head inaccessible;
+	struct list_head persistent_loss;
 };
 
 struct ana_group_entry {
-	struct linked_list list;
+	struct list_head list;
 	struct ana_group *grp;
 	unsigned int portid;
 	bool is_local;
 };
 
 struct ana_ns_entry {
-	struct linked_list list;
+	struct list_head list;
 	struct ana_group *grp;
 	char *subsys;
 	char *ns;
 	bool enabled;
 };
 
-LINKED_LIST(ana_group_list);
+LIST_HEAD(ana_group_list);
 
 struct ana_group *find_ana_group(unsigned int ana_grpid)
 {
@@ -74,11 +74,11 @@ struct ana_group *find_ana_group(unsigned int ana_grpid)
 		return NULL;
 
 	grp->grpid = ana_grpid;
-	INIT_LINKED_LIST(&grp->namespaces);
-	INIT_LINKED_LIST(&grp->optimized);
-	INIT_LINKED_LIST(&grp->non_optimized);
-	INIT_LINKED_LIST(&grp->inaccessible);
-	INIT_LINKED_LIST(&grp->persistent_loss);
+	INIT_LIST_HEAD(&grp->namespaces);
+	INIT_LIST_HEAD(&grp->optimized);
+	INIT_LIST_HEAD(&grp->non_optimized);
+	INIT_LIST_HEAD(&grp->inaccessible);
+	INIT_LIST_HEAD(&grp->persistent_loss);
 	list_add(&grp->list, &ana_group_list);
 	printf("%s: allocating new ANA group %u\n",
 	       __func__, ana_grpid);
@@ -90,7 +90,7 @@ struct ana_group_entry *find_ana_port(struct ana_group *grp,
 				      char *state)
 {
 	struct ana_group_entry *tmp_ge, *ge = NULL;
-	struct linked_list *grp_list;
+	struct list_head *grp_list;
 
 	if (!strcmp(state, "optimized")) {
 		grp_list = &grp->optimized;

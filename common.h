@@ -10,23 +10,6 @@
 
 #define unlikely __glibc_unlikely
 
-#include <sys/types.h>
-#include <sys/time.h>
-#include <unistd.h>
-#include <errno.h>
-#include <signal.h>
-#include <pthread.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <uuid/uuid.h>
-
-#include "utils.h"
-
 extern bool fuse_debug;
 extern bool configfs_debug;
 extern bool etcd_debug;

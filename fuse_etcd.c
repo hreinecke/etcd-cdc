@@ -11,6 +11,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <sys/types.h>
 #include <limits.h>
 #include <libgen.h>
 #include <errno.h>
@@ -243,7 +246,7 @@ static int subsys_namespaces_getattr(const char *subsysnqn, const char *ns,
 	int ret;
 	const char *attr, *p;
 	char *eptr;
-	u32 nsid;
+	uint32_t nsid;
 
 	if (!ns) {
 		int num_ns = 0;
@@ -535,7 +538,7 @@ static int fill_subsys(const char *subsys,
 	if (!strcmp(subdir, "namespaces")) {
 		const char *ns = p;
 		char *eptr = NULL;
-		u32 nsid;
+		uint32_t nsid;
 
 		if (!ns) {
 			filler(buf, ".", NULL, 0, FUSE_FILL_DIR_PLUS);
@@ -694,7 +697,7 @@ static int port_mkdir(char *s)
 static int subsys_mkdir(char *s)
 {
 	char *subsysnqn, *p, *ns, *eptr = NULL;
-	u32 nsid;
+	uint32_t nsid;
 
 	subsysnqn = strtok_r(NULL, "/", &s);
 	if (!subsysnqn)
@@ -819,7 +822,7 @@ static int port_rmdir(char *s)
 static int subsys_rmdir(char *s)
 {
 	char *subsysnqn, *p, *ns, *eptr = NULL;
-	u32 nsid;
+	uint32_t nsid;
 
 	subsysnqn = strtok_r(NULL, "/", &s);
 	if (!subsysnqn)
@@ -1071,7 +1074,7 @@ out_free:
 	return ret;
 }
 
-static int parse_namespace_attr(const char *p, u32 *nsid,
+static int parse_namespace_attr(const char *p, uint32_t *nsid,
 				const char **attr)
 {
 	const char *ns;
@@ -1161,7 +1164,7 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 		}
 	} else if (!strcmp(root, subsys_dir)) {
 		const char *subsysnqn = p;
-		u32 nsid;
+		uint32_t nsid;
 
 		p = strtok(NULL, "/");
 		if (!p)
@@ -1319,7 +1322,7 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 		}
 	} else if (!strcmp(root, subsys_dir)) {
 		const char *subsysnqn = p;
-		u32 nsid;
+		uint32_t nsid;
 
 		p = strtok(NULL, "/");
 		if (!p)
@@ -1426,7 +1429,7 @@ static int write_namespace(const char *subsysnqn, const char *p,
 			   const char *buf, size_t len)
 {
 	int ret;
-	u32 nsid;
+	uint32_t nsid;
 	const char *attr;
 
 	ret = parse_namespace_attr(p, &nsid, &attr);

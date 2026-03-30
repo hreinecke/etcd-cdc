@@ -107,9 +107,6 @@ int etcd_get_cluster_attr(struct etcd_ctx *ctx, const char *node,
 			  const char *attr, char *value, size_t value_len);
 int etcd_set_cluster_id(struct etcd_ctx *ctx);
 int etcd_unset_cluster_id(struct etcd_ctx *ctx);
-int etcd_get_cntlid(struct etcd_ctx *ctx, const char *subsysnqn, u16 *cntlid);
-int etcd_host_disc_entries(const char *hostnqn, uint8_t *log, int log_len);
-int etcd_host_genctr(const char *hostnqn, int *genctr);
 
 #endif /* _ETCD_BACKEND_H */
 

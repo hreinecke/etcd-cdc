@@ -26,8 +26,8 @@ clean:
 
 daemon.o: daemon.c common.h nvme.h etcd/client.h etcd/backend.h
 nvmetd.o: nvmetd.c nvmetd.h etcd/client.h
-inotify.o: inotify.c common.h utils.h configfs.h etcd/client.h etcd/backend.h nvmetd.h
-configfs.o: configfs.c common.h configfs.h utils.h etcd/client.h etcd/backend.h
+inotify.o: inotify.c common.h configfs.h etcd/client.h etcd/backend.h nvmetd.h
+configfs.o: configfs.c common.h configfs.h etcd/client.h etcd/backend.h
 fuse_etcd.o: fuse_etcd.c common.h nvme.h etcd/client.h etcd/backend.h
 etcd/backend.o: etcd/backend.c common.h nvme.h firmware.h etcd/client.h etcd/backend.h
 etcd/client.o: etcd/client.c common.h etcd/client.h etcd/base64.h
