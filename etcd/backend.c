@@ -298,7 +298,7 @@ static struct key_value_template port_template[NUM_PORT_ATTRS] = {
 	{ .key = "addr_trsvcid", .value = "" },
 	{ .key = "addr_treq", .value = "not specified" },
 	{ .key = "addr_tsas", .value = "none" },
-	{ .key = "addr_origin", .value = "" },
+	{ .key = "addr_node", .value = "" },
 };
 
 int etcd_fill_port_dir(struct etcd_ctx *ctx, void *buf, fuse_fill_dir_t filler)
@@ -372,8 +372,8 @@ int etcd_set_port_attr(struct etcd_ctx *ctx, const char *port,
 	char *key;
 	int ret = -ENOENT;
 
-	/* Do not allow to set an invalid origin value */
-	if (!strcmp(attr, "addr_origin")) {
+	/* Do not allow to set an invalid node value */
+	if (!strcmp(attr, "addr_node")) {
 		ret = etcd_test_cluster(ctx, value);
 		if (ret < 0)
 			return -EINVAL;
@@ -727,8 +727,8 @@ int etcd_add_subsys_port(struct etcd_ctx *ctx, const char *subsysnqn,
 	char *key, value[1024];
 	int ret;
 
-	/* Only allow to create symlink if 'addr_origin' is set */
-	ret = etcd_get_port_attr(ctx, port, "addr_origin",
+	/* Only allow to create symlink if 'addr_node' is set */
+	ret = etcd_get_port_attr(ctx, port, "addr_node",
 				 value, sizeof(value));
 	if (ret >= 0 && !strlen(value))
 		return -EPERM;

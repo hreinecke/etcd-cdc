@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: DUAL GPL-2.0/BSD */
 /*
  * fuse_etcd.c
- * etcd fuse emulation for NVMe-over-TCP userspace daemon.
+ * fuse emulation for nvmet-etcd
  *
  * Copyright (c) 2021 Hannes Reinecke <hare@suse.de>
  */
@@ -1507,13 +1507,6 @@ static int ports_write(char *s, const char *port,
 		else
 			ret = len;
 	} else {
-		/*
-		 * These are internal values and should not be
-		 * changed during configuration
-		 */
-		if (!strcmp(attr, "addr_origin"))
-			return -EPERM;
-
 		ret = etcd_set_port_attr(ctx, port, attr, buf, len);
 		if (ret < 0)
 			ret = -EINVAL;

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: DUAL GPL-2.0/BSD */
 /*
  * configfs.c
- * configfs functions for etcd discovery
+ * configfs functions for nvmet-etcd
  *
  * Copyright (c) 2025 Hannes Reinecke <hare@suse.de>
  *
@@ -255,7 +255,7 @@ int configfs_validate_port(struct etcd_ctx *ctx, unsigned int portid)
 	char *key, value[1024];
 	int ret = 0;
 
-	ret = asprintf(&key, "%s/ports/%u/addr_origin",
+	ret = asprintf(&key, "%s/ports/%u/addr_node",
 		       ctx->prefix, portid);
 	if (ret < 0)
 		return ret;
@@ -265,7 +265,7 @@ int configfs_validate_port(struct etcd_ctx *ctx, unsigned int portid)
 		return ret == -ENOENT ? 0 : ret;
 	}
 	if (strcmp(ctx->node_name, value))
-		ret = -EEXIST;
+		ret = -EREMOTE;
 	return ret;
 }
 
@@ -302,7 +302,7 @@ int configfs_update_key(struct etcd_ctx *ctx,
 	ret = asprintf(&pathname, "%s/%s", dirname, name);
 	if (ret < 0)
 		return ret;
-	if (!strcmp(name, "addr_origin") ||
+	if (!strcmp(name, "addr_node") ||
 	    !strcmp(name, "device_origin")) {
 		/* Synthetic attribute, not present in configfs */
 		strcpy(value, ctx->node_name);
@@ -467,7 +467,7 @@ int upload_configfs(struct etcd_ctx *ctx, const char *dir,
 			break;
 
 		if (!strcmp(se->d_name, "addr_trtype")) {
-			ret = configfs_update_key(ctx, dirname, "addr_origin");
+			ret = configfs_update_key(ctx, dirname, "addr_node");
 			if (ret < 0)
 				break;
 		}
@@ -1000,7 +1000,7 @@ int configfs_purge_ports(struct etcd_ctx *ctx)
 		if (!attr)
 			continue;
 		attr++;
-		if (strcmp(attr, "addr_origin"))
+		if (strcmp(attr, "addr_node"))
 			continue;
 		if (strstr(kv->key, "referrals"))
 			continue;
