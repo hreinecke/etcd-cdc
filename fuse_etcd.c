@@ -1446,33 +1446,120 @@ static int write_namespace(const char *subsysnqn, const char *p,
 	return len;
 }
 
+static int ports_write(char *s, const char *port,
+		       const char *buf, size_t len)
+{
+	const char *attr, *p;
+	int ret = -ENOENT;
+
+	attr = strtok_r(NULL, "/", &s);
+	if (!attr)
+		return ret;
+
+	p = strtok_r(NULL, "/", &s);
+	fuse_info("%s: port %s attr %s p %s", __func__,
+		  port, attr, p);
+
+	if (!strcmp(attr, "ana_groups")) {
+		const char *ana_grp = p;
+
+		if (!ana_grp)
+			return ret;
+
+		p = strtok_r(NULL, "/", &s);
+		if (!p || strcmp(p, "ana_state"))
+			return ret;
+
+		fuse_info("%s: port %s ana_grp %s state %s", __func__,
+			  port, ana_grp, buf);
+		ret = etcd_set_ana_group(ctx, port, ana_grp,
+					 buf, len);
+		if (ret < 0)
+			ret = -EINVAL;
+		else
+			ret = len;
+	} else {
+		/*
+		 * These are internal values and should not be
+		 * changed during configuration
+		 */
+		if (!strcmp(attr, "addr_origin"))
+			return -EPERM;
+
+		ret = etcd_set_port_attr(ctx, port, attr, buf, len);
+		if (ret < 0)
+			ret = -EINVAL;
+		else
+			ret = len;
+	}
+	return ret;
+}
+
+static int subsys_write(char *s, const char *subsysnqn,
+			const char *buf, size_t len)
+{
+	const char *p, *attr;
+	int ret = -ENOENT;
+
+	p = strtok_r(NULL, "/", &s);
+	if (!p)
+		return ret;
+
+	attr = p;
+	p = strtok_r(NULL, "/", &s);
+	if (!p) {
+		if (!strcmp(attr, "attr_type"))
+			return -EPERM;
+		if (!strcmp(attr, "attr_cntlid_range"))
+			return -EPERM;
+		ret = etcd_set_subsys_attr(ctx, subsysnqn, attr,
+					   buf, len);
+		if (ret < 0)
+			ret = -EINVAL;
+		else
+			ret = len;
+	} else if (!strcmp(attr, "namespaces"))
+		ret = write_namespace(subsysnqn, p, buf, len);
+
+	return ret;
+}
+
+static int hosts_write(char *s, const char *hostnqn,
+			const char *buf, size_t len)
+{
+	const char *p, *attr;
+	int ret = -ENOENT;
+
+	p = strtok_r(NULL, "/", &s);
+	if (!p)
+		return ret;
+
+	attr = p;
+	p = strtok_r(NULL, "/", &s);
+	if (p)
+		return ret;
+
+	ret = etcd_set_host_attr(ctx, hostnqn, attr, buf, len);
+	if (ret < 0)
+		ret = -EINVAL;
+	else
+		ret = len;
+	return ret;
+}
+
 static int nofuse_write(const char *path, const char *buf, size_t len,
 			off_t offset, struct fuse_file_info *fi)
 {
-	const char *p, *root, *attr;
-	char *pathbuf, *value, *ptr, *s;
+	const char *p, *root;
+	char *pathbuf, *s;
 	int ret = -ENOENT;
 
 	pathbuf = strdup(path);
 	if (!pathbuf)
 		return -ENOMEM;
 
-	value = malloc(strlen(buf) + 1);
-	if (!value)
-		return -ENOMEM;
-	memset(value, 0, strlen(buf) + 1);
-	strncpy(value, buf, len);
-	ptr = value;
-
-	while (ptr && *ptr) {
-		if (*ptr == '\n') {
-			*ptr = '\0';
-			break;
-		}
-		ptr++;
-	}
 	fuse_info("%s: path %s buf %s len %ld off %ld", __func__,
-	       pathbuf, value, len, offset);
+	       pathbuf, buf, len, offset);
 	root = strtok_r(pathbuf, "/", &s);
 	if (!root)
 		goto out_free;
@@ -1480,17 +1567,22 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 	if (!strcmp(root, cluster_dir))
 		goto out_free;
 
+	if (offset > 0) {
+		ret = -EINVAL;
+		goto out_free;
+	}
+
 	p = strtok_r(NULL, "/", &s);
 	if (!p) {
 		if (!strcmp(root, "discovery_nqn")) {
-			ret = etcd_set_discovery_nqn(ctx, value, len);
+			ret = etcd_set_discovery_nqn(ctx, buf, len);
 			if (ret < 0)
 				goto out_free;
 		} else if (!strcmp(root, "debug")) {
 			char level[17], onoff;
 			bool enable;
 
-			if (sscanf(value, "%c%16s", &onoff, level) != 2) {
+			if (sscanf(buf, "%c%16s", &onoff, level) != 2) {
 				ret = -EINVAL;
 				goto out_free;
 			}
@@ -1516,94 +1608,16 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 	} else if (!strcmp(root, ports_dir)) {
 		const char *port = p;
 
-		attr = strtok_r(NULL, "/", &s);
-		if (!attr)
-			goto out_free;
-
-		p = strtok_r(NULL, "/", &s);
-		fuse_info("%s: port %s attr %s p %s", __func__,
-		       port, attr, p);
-
-		if (!strcmp(attr, "ana_groups")) {
-			const char *ana_grp = p;
-
-			if (!ana_grp)
-				goto out_free;
-			p = strtok_r(NULL, "/", &s);
-			if (!p || strcmp(p, "ana_state"))
-				goto out_free;
-
-			fuse_info("%s: port %s ana_grp %s state %s", __func__,
-			       port, ana_grp, value);
-			ret = etcd_set_ana_group(ctx, port, ana_grp,
-						 value, len);
-			if (ret < 0) {
-				ret = -EINVAL;
-				goto out_free;
-			}
-			ret = len;
-		} else {
-			/*
-			 * These are internal values and should not be
-			 * changed during configuration
-			 */
-			if (!strcmp(attr, "addr_origin")) {
-				ret = -EPERM;
-				goto out_free;
-			}
-			ret = etcd_set_port_attr(ctx, port, attr, value, len);
-			if (ret < 0) {
-				ret = -EINVAL;
-				goto out_free;
-			}
-			ret = len;
-		}
+		return ports_write(s, port, buf, len);
 	} else if (!strcmp(root, subsys_dir)) {
 		const char *subsysnqn = p;
 
-		p = strtok_r(NULL, "/", &s);
-		if (!p)
-			goto out_free;
-
-		attr = p;
-		p = strtok_r(NULL, "/", &s);
-		if (!p) {
-			if (!strcmp(attr, "attr_type"))
-				return -EPERM;
-			if (!strcmp(attr, "attr_cntlid_range"))
-				return -EPERM;
-			ret = etcd_set_subsys_attr(ctx, subsysnqn, attr,
-						   value, len);
-			if (ret < 0) {
-				ret = -EINVAL;
-				goto out_free;
-			}
-			ret = len;
-		} else if (strcmp(attr, "namespaces")) {
-			ret = -ENOENT;
-			goto out_free;
-		} else {
-			ret = write_namespace(subsysnqn, p, value, len);
-		}
+		return subsys_write(s, subsysnqn, buf, len);
 	} else if (!strcmp(root, hosts_dir)) {
 		const char *hostnqn = p;
-
-		p = strtok_r(NULL, "/", &s);
-		if (!p)
-			goto out_free;
-		attr = p;
-		p = strtok_r(NULL, "/", &s);
-		if (p)
-			goto out_free;
-		ret = etcd_set_host_attr(ctx, hostnqn, attr, value, len);
-		if (ret < 0) {
-			ret = -EINVAL;
-			goto out_free;
-		}
-		ret = len;
+		return hosts_write(s, hostnqn, buf, len);
 	}
 out_free:
-	free(value);
 	free(pathbuf);
 	if (ret < 0)
 		fuse_err("%s: path %s error %d",

@@ -21,7 +21,7 @@ int etcd_test_host(struct etcd_ctx *ctx, const char *nqn);
 int etcd_get_host_attr(struct etcd_ctx *ctx, const char *nqn,
 		       const char *attr, char *value, size_t value_len);
 int etcd_set_host_attr(struct etcd_ctx *ctx, const char *nqn,
-		       const char *attr, char *value, size_t value_len);
+		       const char *attr, const char *value, size_t value_len);
 int etcd_del_host(struct etcd_ctx *ctx, const char *nqn);
 
 int etcd_fill_port(struct etcd_ctx *ctx, const char *port,
@@ -42,7 +42,7 @@ int etcd_add_ana_group(struct etcd_ctx *ctx, const char *port,
 int etcd_get_ana_group(struct etcd_ctx *ctx, const char *port,
 		       int ana_grpid, char *ana_state, size_t ana_state_len);
 int etcd_set_ana_group(struct etcd_ctx *ctx, const char *port,
-		       const char *ana_grp, char *ana_state,
+		       const char *ana_grp, const char *ana_state,
 		       size_t ana_state_len);
 int etcd_del_ana_group(struct etcd_ctx *ctx, const char *port, int ana_grpid);
 
