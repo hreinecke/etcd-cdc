@@ -18,6 +18,9 @@ extern bool http_debug;
 #define NVMET_CONFIGFS "/sys/kernel/config/nvmet"
 #define NOFUSE_NGUID_PREFIX "0efd376f6e756665"
 
+#define CLUSTER_MAX_SIZE 65520
+#define CLUSTER_DEFAULT_SIZE 16
+
 extern int stopped;
 
 #endif

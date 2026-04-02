@@ -10,9 +10,6 @@
 
 #include <json-c/json.h>
 
-#define CLUSTER_MAX_SIZE 65520
-#define CLUSTER_DEFAULT_SIZE 16
-
 typedef void (*etcd_parse_cb)(struct json_object *obj, void *arg);
 
 struct etcd_parse_data {
