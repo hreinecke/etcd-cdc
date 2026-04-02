@@ -1252,18 +1252,18 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 		       struct fuse_file_info *fi)
 {
 	const char *p, *root, *attr;
-	char *pathbuf, value[1024];
+	char *pathbuf, *s, value[1024];
 	int ret = -ENOENT;
 
 	memset(value, 0, 1024);
 	pathbuf = strdup(path);
 	if (!pathbuf)
 		return -ENOMEM;
-	root = strtok(pathbuf, "/");
+	root = strtok_r(pathbuf, "/", &s);
 	if (!root)
 		goto out_free;
 
-	p = strtok(NULL, "/");
+	p = strtok_r(NULL, "/", &s);
 	if (!p) {
 		if (!strcmp(root, "discovery_nqn")) {
 			ret = etcd_get_discovery_nqn(ctx, value,
@@ -1282,11 +1282,11 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 	} else if (!strcmp(root, ports_dir)) {
 		const char *port = p;
 
-		attr = strtok(NULL, "/");
+		attr = strtok_r(NULL, "/", &s);
 		if (!attr)
 			goto out_free;
 
-		p = strtok(NULL, "/");
+		p = strtok_r(NULL, "/", &s);
 		fuse_info("%s: port %s attr %s p %s", __func__,
 		       port, attr, p);
 		if (!strcmp(attr, "ana_groups")) {
@@ -1296,7 +1296,7 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 
 			if (!ana_grp)
 				goto out_free;
-			p = strtok(NULL, "/");
+			p = strtok_r(NULL, "/", &s);
 			if (!p || strcmp(p, "ana_state"))
 				goto out_free;
 			ana_grpid = strtoul(ana_grp, &eptr, 10);
@@ -1324,12 +1324,12 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 		const char *subsysnqn = p;
 		uint32_t nsid;
 
-		p = strtok(NULL, "/");
+		p = strtok_r(NULL, "/", &s);
 		if (!p)
 			goto out_free;
 
 		attr = p;
-		p = strtok(NULL, "/");
+		p = strtok_r(NULL, "/", &s);
 		fuse_info("%s: subsys %s attr %s p %s", __func__,
 		       subsysnqn, attr, p);
 		if (!p) {
@@ -1370,11 +1370,11 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 	} else if (!strcmp(root, hosts_dir)) {
 		const char *hostnqn = p;
 
-		p = strtok(NULL, "/");
+		p = strtok_r(NULL, "/", &s);
 		if (!p)
 			goto out_free;
 		attr = p;
-		p = strtok(NULL, "/");
+		p = strtok_r(NULL, "/", &s);
 		fuse_info("%s: hostnqn %s attr %s p %s\n", __func__,
 			  hostnqn, attr, p);
 		if (p) {
@@ -1390,11 +1390,11 @@ static int nofuse_read(const char *path, char *buf, size_t size, off_t offset,
 	} else if (!strcmp(root, cluster_dir)) {
 		const char *node = p;
 
-		p = strtok(NULL, "/");
+		p = strtok_r(NULL, "/", &s);
 		if (!p)
 			goto out_free;
 		attr = p;
-		p = strtok(NULL, "/");
+		p = strtok_r(NULL, "/", &s);
 		fuse_info("%s: node %s attr %s p %s\n", __func__,
 			  node, attr, p);
 		if (p) {
