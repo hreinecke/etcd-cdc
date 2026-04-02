@@ -1450,7 +1450,7 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 			off_t offset, struct fuse_file_info *fi)
 {
 	const char *p, *root, *attr;
-	char *pathbuf, *value, *ptr;
+	char *pathbuf, *value, *ptr, *s;
 	int ret = -ENOENT;
 
 	pathbuf = strdup(path);
@@ -1473,14 +1473,14 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 	}
 	fuse_info("%s: path %s buf %s len %ld off %ld", __func__,
 	       pathbuf, value, len, offset);
-	root = strtok(pathbuf, "/");
+	root = strtok_r(pathbuf, "/", &s);
 	if (!root)
 		goto out_free;
 
 	if (!strcmp(root, cluster_dir))
 		goto out_free;
 
-	p = strtok(NULL, "/");
+	p = strtok_r(NULL, "/", &s);
 	if (!p) {
 		if (!strcmp(root, "discovery_nqn")) {
 			ret = etcd_set_discovery_nqn(ctx, value, len);
@@ -1516,11 +1516,11 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 	} else if (!strcmp(root, ports_dir)) {
 		const char *port = p;
 
-		attr = strtok(NULL, "/");
+		attr = strtok_r(NULL, "/", &s);
 		if (!attr)
 			goto out_free;
 
-		p = strtok(NULL, "/");
+		p = strtok_r(NULL, "/", &s);
 		fuse_info("%s: port %s attr %s p %s", __func__,
 		       port, attr, p);
 
@@ -1529,7 +1529,7 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 
 			if (!ana_grp)
 				goto out_free;
-			p = strtok(NULL, "/");
+			p = strtok_r(NULL, "/", &s);
 			if (!p || strcmp(p, "ana_state"))
 				goto out_free;
 
@@ -1561,12 +1561,12 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 	} else if (!strcmp(root, subsys_dir)) {
 		const char *subsysnqn = p;
 
-		p = strtok(NULL, "/");
+		p = strtok_r(NULL, "/", &s);
 		if (!p)
 			goto out_free;
 
 		attr = p;
-		p = strtok(NULL, "/");
+		p = strtok_r(NULL, "/", &s);
 		if (!p) {
 			if (!strcmp(attr, "attr_type"))
 				return -EPERM;
@@ -1588,11 +1588,11 @@ static int nofuse_write(const char *path, const char *buf, size_t len,
 	} else if (!strcmp(root, hosts_dir)) {
 		const char *hostnqn = p;
 
-		p = strtok(NULL, "/");
+		p = strtok_r(NULL, "/", &s);
 		if (!p)
 			goto out_free;
 		attr = p;
-		p = strtok(NULL, "/");
+		p = strtok_r(NULL, "/", &s);
 		if (p)
 			goto out_free;
 		ret = etcd_set_host_attr(ctx, hostnqn, attr, value, len);
