@@ -887,7 +887,6 @@ static struct key_value_template ns_template[NUM_NS_ATTRS] = {
 	{ .key = "device_uuid", .value = "" },
 	{ .key = "device_path", .value = "" },
 	{ .key = "device_node", .value = "" },
-	{ .key = "device_origin", .value = "" },
 	{ .key = "ana_grpid", .value = "1" },
 	{ .key = "enable", .value = "0" },
 };
@@ -1043,14 +1042,14 @@ int etcd_set_namespace_attr(struct etcd_ctx *ctx, const char *subsysnqn,
 			printf("%s: subsys %s nsid %d enable error %d\n",
 			       __func__, subsysnqn, nsid, ret);
 	} else if (strcmp(value, "0")) {
-		char origin[1024];
+		char node[1024];
 		/*
-		 * Do not allow to enable it if 'device_origin' is not set
+		 * Do not allow to enable it if 'device_node' is not set
 		 */
 		ret = etcd_get_namespace_attr(ctx, subsysnqn, nsid,
-					      "device_origin", origin,
-					      sizeof(origin));
-		if (ret < 0 && strlen(origin) == 0) {
+					      "device_node", node,
+					      sizeof(node));
+		if (ret < 0 && strlen(node) == 0) {
 			fprintf(stderr,
 				"%s: subsys %s nsid %d validation error %d\n",
 				__func__, subsysnqn, nsid, ret);
@@ -1060,8 +1059,8 @@ int etcd_set_namespace_attr(struct etcd_ctx *ctx, const char *subsysnqn,
 		       __func__, subsysnqn, nsid);
 		ret = 0;
 	}
-	/* Do not allow to set an invalid origin value */
-	if (!strcmp(attr, "device_origin")) {
+	/* Do not allow to set an invalid node value */
+	if (!strcmp(attr, "device_node")) {
 		ret = etcd_test_cluster(ctx, value);
 		if (ret < 0)
 			return -EINVAL;

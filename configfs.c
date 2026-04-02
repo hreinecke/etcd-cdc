@@ -275,7 +275,7 @@ int configfs_validate_namespace(struct etcd_ctx *ctx, const char *subsysnqn,
 	char *key, value[1024];
 	int ret = 0;
 
-	ret = asprintf(&key, "%s/subsystems/%s/namespaces/%d/device_origin",
+	ret = asprintf(&key, "%s/subsystems/%s/namespaces/%d/device_node",
 		       ctx->prefix, subsysnqn, nsid);
 	if (ret < 0)
 		return ret;
@@ -303,7 +303,7 @@ int configfs_update_key(struct etcd_ctx *ctx,
 	if (ret < 0)
 		return ret;
 	if (!strcmp(name, "addr_node") ||
-	    !strcmp(name, "device_origin")) {
+	    !strcmp(name, "device_node")) {
 		/* Synthetic attribute, not present in configfs */
 		strcpy(value, ctx->node_name);
 		ret = 0;
@@ -471,10 +471,10 @@ int upload_configfs(struct etcd_ctx *ctx, const char *dir,
 			if (ret < 0)
 				break;
 		}
-		/* Do not set 'origin' if no device path is set */
+		/* Do not set 'node' if no device path is set */
 		if (!strcmp(se->d_name, "device_path") && ret > 0) {
 			ret = configfs_update_key(ctx, dirname,
-						  "device_origin");
+						  "device_node");
 			if (ret < 0)
 				break;
 		}
