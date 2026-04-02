@@ -1100,6 +1100,105 @@ static int parse_namespace_attr(const char *p, uint32_t *nsid,
 	return 0;
 }
 
+static int ports_open(char *s, const char *port)
+{
+	const char *p, *attr;
+	int ret = -ENOENT;
+	
+	p = strtok_r(NULL, "/", &s);
+	if (!p)
+		return ret;
+
+	attr = p;
+	p = strtok_r(NULL, "/", &s);
+	fuse_info("%s: port %s attr %s p %s", __func__,
+		  port, attr, p);
+	if (!strcmp(attr, "ana_groups")) {
+		const char *ana_grp = p;
+		char *eptr = NULL;
+		unsigned long ana_grpid;
+
+		p = strtok_r(NULL, "/", &s);
+		if (!p || strcmp(p, "ana_state"))
+			return -ENOENT;
+
+		ana_grpid = strtoul(ana_grp, &eptr, 10);
+		if (ana_grp == eptr || ana_grpid == ULONG_MAX)
+			return -EINVAL;
+
+		fuse_info("%s: port %s ana_grp %lu attr %s", __func__,
+			  port, ana_grpid, p);
+		ret = etcd_get_ana_group(ctx, port, ana_grpid,
+					 NULL, 0);
+		if (ret < 0) {
+			fuse_err("%s: port %s ana_grp %s error %d",
+				 __func__, port, ana_grp, ret);
+			ret = -ENOENT;
+		} else
+			ret = 0;
+	} else {
+		ret = etcd_get_port_attr(ctx, port, attr, NULL, 0);
+		if (ret < 0)
+			ret = -ENOENT;
+		else
+			ret = 0;
+	}
+	return ret;
+}
+
+static int subsys_open(char *s, const char *subsysnqn)
+{
+	const char *p, *attr;
+	int ret = -ENOENT;
+
+	p = strtok_r(NULL, "/", &s);
+	if (!p)
+		return ret;
+
+	attr = p;
+	p = strtok_r(NULL, "/", &s);
+	fuse_info("%s: subsys %s attr %s p %s", __func__,
+		  subsysnqn, attr, p);
+	if (!p) {
+		ret = etcd_get_subsys_attr(ctx, subsysnqn,
+					   attr, NULL, 0);
+		if (ret < 0)
+			ret = -ENOENT;
+	} else if (!strcmp(attr, "namespaces")) {
+		uint32_t nsid;
+
+		ret = parse_namespace_attr(p, &nsid, &attr);
+		if (ret < 0)
+			return -ENOENT;
+
+		ret = etcd_get_namespace_attr(ctx, subsysnqn, nsid,
+					      attr, NULL, 0);
+		if (ret < 0)
+			ret = -ENOENT;
+	}
+	return ret;
+}
+
+static int hosts_open(char *s, const char *hostnqn)
+{
+	const char *p, *attr;
+	int ret = -ENOENT;
+
+	p = strtok_r(NULL, "/", &s);
+	if (!p)
+		return ret;
+
+	attr = p;
+	p = strtok_r(NULL, "/", &s);
+	fuse_info("%s: hostnqn %s attr %s p %s\n", __func__,
+		  hostnqn, attr, p);
+	if (p)
+		return ret;
+
+	ret = etcd_get_host_attr(ctx, hostnqn, attr, NULL, 0);
+	return ret < 0 ? -ENOENT : 0;
+}
+
 static int nofuse_open(const char *path, struct fuse_file_info *fi)
 {
 	const char *p, *root, *attr;
@@ -1124,93 +1223,17 @@ static int nofuse_open(const char *path, struct fuse_file_info *fi)
 	if (!strcmp(root, ports_dir)) {
 		const char *port = p;
 
-		p = strtok_r(NULL, "/", &s);
-		if (!p)
-			goto out_free;
-
-		attr = p;
-		p = strtok_r(NULL, "/", &s);
-		fuse_info("%s: port %s attr %s p %s", __func__,
-		       port, attr, p);
-		if (!strcmp(attr, "ana_groups")) {
-			const char *ana_grp = p;
-			char *eptr = NULL;
-			unsigned long ana_grpid;
-
-			p = strtok_r(NULL, "/", &s);
-			if (!p || strcmp(p, "ana_state"))
-				goto out_free;
-			ana_grpid = strtoul(ana_grp, &eptr, 10);
-			if (ana_grp == eptr || ana_grpid == ULONG_MAX) {
-				ret = -EINVAL;
-				goto out_free;
-			}
-			fuse_info("%s: port %s ana_grp %lu attr %s", __func__,
-			       port, ana_grpid, p);
-			ret = etcd_get_ana_group(ctx, port, ana_grpid,
-						 NULL, 0);
-			if (ret < 0) {
-				fuse_err("%s: port %s ana_grp %s error %d",
-					 __func__, port, ana_grp, ret);
-				ret = -ENOENT;
-			} else
-				ret = 0;
-			goto out_free;
-		} else {
-			ret = etcd_get_port_attr(ctx, port, attr, NULL, 0);
-			if (ret < 0)
-				ret = -ENOENT;
-			goto out_free;
-		}
+		ret = ports_open(s, port);
+		goto out_free;
 	} else if (!strcmp(root, subsys_dir)) {
 		const char *subsysnqn = p;
-		uint32_t nsid;
 
-		p = strtok_r(NULL, "/", &s);
-		if (!p)
-			goto out_free;
-
-		attr = p;
-		p = strtok_r(NULL, "/", &s);
-		fuse_info("%s: subsys %s attr %s p %s", __func__,
-		       subsysnqn, attr, p);
-		if (!p) {
-			ret = etcd_get_subsys_attr(ctx, subsysnqn,
-						   attr, NULL, 0);
-			if (ret < 0)
-				ret = -ENOENT;
-			goto out_free;
-		} else if (strcmp(attr, "namespaces")) {
-			ret = -ENOENT;
-			goto out_free;
-		}
-		ret = parse_namespace_attr(p, &nsid, &attr);
-		if (ret < 0) {
-			ret = -ENOENT;
-			goto out_free;
-		}
-		ret = etcd_get_namespace_attr(ctx, subsysnqn, nsid,
-					      attr, NULL, 0);
-		if (ret < 0)
-			ret = -ENOENT;
+		ret = subsys_open(s, subsysnqn);
 		goto out_free;
 	} else if (!strcmp(root, hosts_dir)) {
 		const char *hostnqn = p;
 
-		p = strtok_r(NULL, "/", &s);
-		if (!p)
-			goto out_free;
-		attr = p;
-		p = strtok_r(NULL, "/", &s);
-		fuse_info("%s: hostnqn %s attr %s p %s\n", __func__,
-			  hostnqn, attr, p);
-		if (p) {
-			ret = -ENOENT;
-			goto out_free;
-		}
-		ret = etcd_get_host_attr(ctx, hostnqn, attr, NULL, 0);
-		if (ret < 0)
-			ret = -ENOENT;
+		ret = hosts_open(s, hostnqn);
 		goto out_free;
 	} else if (!strcmp(root, cluster_dir)) {
 		const char *node = p;
