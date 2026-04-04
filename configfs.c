@@ -187,20 +187,6 @@ char *path_to_key(struct etcd_ctx *ctx, const char *path)
 	return key;
 }
 
-char *key_to_attr(struct etcd_ctx *ctx, char *key)
-{
-	char *attr = key + strlen(ctx->prefix) + 1;
-	char *path;
-	int ret;
-
-	ret = asprintf(&path, "%s/%s", ctx->configfs, attr);
-	if (ret < 0) {
-		printf("%s: out of memory\n", __func__);
-		return NULL;
-	}
-	return path;
-}
-
 static void transform_cntlid_range(struct etcd_ctx *ctx, char *old, char *value)
 {
 	char new[1024], *p, *n;
@@ -248,47 +234,6 @@ static void clear_cntlid_range(struct etcd_ctx *ctx, char *old, char *new)
 		n = strchr(p, ',');
 		i++;
 	}
-}
-
-int configfs_validate_port(struct etcd_ctx *ctx, unsigned int portid)
-{
-	char *key, value[1024];
-	int ret = 0;
-
-	ret = asprintf(&key, "%s/ports/%u/addr_node",
-		       ctx->prefix, portid);
-	if (ret < 0)
-		return ret;
-	ret = etcd_kv_get(ctx, key, value, sizeof(value));
-	if (ret < 0) {
-		free(key);
-		return ret == -ENOENT ? 0 : ret;
-	}
-	if (strcmp(ctx->node_name, value))
-		ret = -EREMOTE;
-	return ret;
-}
-
-int configfs_validate_namespace(struct etcd_ctx *ctx, const char *subsysnqn,
-				int nsid)
-{
-	char *key, value[1024];
-	int ret = 0;
-
-	ret = asprintf(&key, "%s/subsystems/%s/namespaces/%d/device_node",
-		       ctx->prefix, subsysnqn, nsid);
-	if (ret < 0)
-		return ret;
-	ret = etcd_kv_get(ctx, key, value, sizeof(value));
-	if (ret < 0) {
-		free(key);
-		return ret;
-	}
-	if (!strlen(value))
-		return -ENOENT;
-	if (strcmp(ctx->node_name, value))
-		ret = -EEXIST;
-	return ret;
 }
 
 int configfs_update_key(struct etcd_ctx *ctx,
@@ -658,82 +603,24 @@ static int validate_namespaces(struct etcd_ctx *ctx, const char *subsys)
 		printf("%s: validate %s namespace %lu\n",
 		       __func__, subsys, nsid);
 
-		ret = configfs_validate_namespace(ctx, subsys, nsid);
-		if (ret < 0 && ret != -ENOENT) {
-			ret = etcd_test_namespace(ctx, subsys, nsid);
-			if (ret < 0)
-				continue;
-			if (ret == 1) {
+		ret = etcd_validate_namespace(ctx, subsys, nsid);
+		if (ret < 0) {
+			if (ret == -EREMOTE) {
 				fprintf(stderr,
 					"%s: subsys %s namespace %s is remote\n",
 					__func__, subsys, se->d_name);
-				ret = -EEXIST;
-				break;
+				continue;
+			}
+			if (ret != -ENOENT) {
+				ret = etcd_test_namespace(ctx, subsys, nsid);
+				if (ret < 0)
+					continue;
 			}
 		}
 		ret = validate_ana_grpid(ctx, subsys, se->d_name);
 		if (ret < 0)
 			break;
 		ret = 0;
-	}
-	closedir(sd);
-	free(dirname);
-	return ret;
-}
-
-static int validate_port(struct etcd_ctx *ctx, char *port)
-{
-	unsigned long portid;
-	char *dirname, *eptr;
-	DIR *sd;
-	struct dirent *se;
-	int ret;
-
-	portid = strtoul(port, &eptr, 10);
-	if (portid == ULONG_MAX || port == eptr)
-		return -ERANGE;
-
-	ret = asprintf(&dirname, "%s/ports/%lu/ana_groups",
-		       ctx->configfs, portid);
-	if (ret < 0)
-		return -ENOMEM;
-	sd = opendir(dirname);
-	if (!sd) {
-		fprintf(stderr, "cannot open %s\n", dirname);
-		free(dirname);
-		return -errno;
-	}
-	while ((se = readdir(sd))) {
-		char *path, value[1024];
-		unsigned long ana_grpid;
-		struct ana_group *grp;
-		struct ana_group_entry *ge;
-
-		if (!strcmp(se->d_name, ".") ||
-		    !strcmp(se->d_name, ".."))
-			continue;
-
-		if (se->d_type != DT_DIR)
-			continue;
-
-		ana_grpid = strtoul(se->d_name, NULL, 10);
-		if (ana_grpid == ULONG_MAX)
-			continue;
-		grp = find_ana_group(ana_grpid);
-		if (!grp)
-			continue;
-		ret = asprintf(&path, "%s/%s/ana_state",
-			       dirname, se->d_name);
-		if (ret < 0)
-			continue;
-		ret = read_attr(path, value, sizeof(value));
-		free(path);
-		if (ret < 0)
-			continue;
-		ge = find_ana_port(grp, portid, value);
-		if (!ge)
-			continue;
-		ge->is_local = true;
 	}
 	closedir(sd);
 	free(dirname);
@@ -870,6 +757,9 @@ int configfs_validate_cluster(struct etcd_ctx *ctx)
 		return -errno;
 	}
 	while ((se = readdir(sd))) {
+		unsigned long portid;
+		char *eptr;
+
 		if (!strcmp(se->d_name, ".") ||
 		    !strcmp(se->d_name, ".."))
 			continue;
@@ -877,7 +767,13 @@ int configfs_validate_cluster(struct etcd_ctx *ctx)
 		if (se->d_type != DT_DIR)
 			continue;
 
-		ret = validate_port(ctx, se->d_name);
+		errno = 0;
+		portid = strtoul(se->d_name, &eptr, 10);
+		if (errno || portid > UINT_MAX) {
+			ret = -ERANGE;
+			break;
+		}
+		ret = etcd_validate_port(ctx, portid);
 		if (ret < 0)
 			break;
 	}
@@ -919,7 +815,7 @@ int configfs_load_ana(struct etcd_ctx *ctx)
 			ret = -ERANGE;
 			break;
 		}
-		ret = configfs_validate_port(ctx, portid);
+		ret = etcd_validate_port(ctx, portid);
 		if (ret == 0)
 			is_local = true;
 		else

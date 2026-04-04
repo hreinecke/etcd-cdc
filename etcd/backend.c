@@ -418,6 +418,29 @@ int etcd_del_port(struct etcd_ctx *ctx, const char *port)
 	return ret;
 }
 
+int etcd_validate_port(struct etcd_ctx *ctx, unsigned int portid)
+{
+	char *key, value[1024];
+	int ret = 0;
+
+	ret = asprintf(&key, "%s/ports/%u/device_node",
+		       ctx->prefix, portid);
+	if (ret < 0)
+		return -ENOMEM;
+	ret = etcd_kv_get(ctx, key, value, sizeof(value));
+	if (ret < 0) {
+		free(key);
+		return ret;
+	}
+	if (!strlen(value))
+		return -ENOENT;
+	if (strcmp(ctx->node_name, value))
+		ret = -EREMOTE;
+	else
+		ret = 0;
+	return ret;
+}
+
 int etcd_count_ana_groups(struct etcd_ctx *ctx, const char *port, int *ngrps)
 {
 	char *key;
@@ -1166,6 +1189,28 @@ int etcd_del_namespace(struct etcd_ctx *ctx, const char *subsysnqn, int nsid)
 
 	ret = etcd_kv_delete(ctx, key);
 	free(key);
+	return ret;
+}
+
+int etcd_validate_namespace(struct etcd_ctx *ctx, const char *subsysnqn,
+			    int nsid)
+{
+	char *key, value[1024];
+	int ret = 0;
+
+	ret = asprintf(&key, "%s/subsystems/%s/namespaces/%d/device_node",
+		       ctx->prefix, subsysnqn, nsid);
+	if (ret < 0)
+		return -ENOMEM;
+	ret = etcd_kv_get(ctx, key, value, sizeof(value));
+	if (ret < 0) {
+		free(key);
+		return ret;
+	}
+	if (!strlen(value))
+		return -ENOENT;
+	if (strcmp(ctx->node_name, value))
+		ret = -EREMOTE;
 	return ret;
 }
 

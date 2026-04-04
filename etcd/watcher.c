@@ -68,7 +68,7 @@ out:
 	return ret;
 }
 
-static int create_value(char *path, char *value)
+static int create_value(const char *path, char *value)
 {
 	char *parent, *ptr;
 	struct stat st;
@@ -125,7 +125,7 @@ out:
 	return ret;
 }
 
-int delete_value(char *path, unsigned int mode)
+int delete_value(const char *path, unsigned int mode)
 {
 	char *parent, *ptr;
 	struct stat st;
@@ -182,7 +182,7 @@ out:
 	return ret;
 }
 
-static int update_key_to_value(char *path, char *value)
+static int update_key_to_value(const char *path, char *value)
 {
 	int fd, ret;
 	char buf[256];
@@ -230,7 +230,7 @@ static int validate_key(struct etcd_ctx *ctx, struct etcd_kv *kv)
 		portid = strtoul(port, &eptr, 10);
 		if (portid == ULONG_MAX || port == eptr)
 			return -ERANGE;
-		ret = configfs_validate_port(ctx, portid);
+		ret = etcd_validate_port(ctx, portid);
 	}
 	if (!strncmp(key, "subsystems", 10)) {
 		int nsid = -1;
@@ -250,10 +250,26 @@ static int validate_key(struct etcd_ctx *ctx, struct etcd_kv *kv)
 		 * running on the local node */
 		if (!strcmp(attr, "enable") ||
 		    !strcmp(attr, "device_path"))
-			ret = configfs_validate_namespace(ctx, subsys, nsid);
+			ret = etcd_validate_namespace(ctx, subsys, nsid);
 		free(arg);
+		if (ret < 0)
+			ret = ENOENT;
 	}
 	return ret;
+}
+
+char *key_to_attr(struct etcd_ctx *ctx, char *key)
+{
+	const char *attr = key + strlen(ctx->prefix) + 1;
+	char *path;
+	int ret;
+
+	ret = asprintf(&path, "%s/%s", ctx->configfs, attr);
+	if (ret < 0) {
+		printf("%s: out of memory\n", __func__);
+		return NULL;
+	}
+	return path;
 }
 
 void etcd_watch_cb(void *arg, struct etcd_kv *kv)

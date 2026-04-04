@@ -34,6 +34,7 @@ int etcd_set_port_attr(struct etcd_ctx *ctx, const char *port,
 int etcd_get_port_attr(struct etcd_ctx *ctx, const char *port,
 		       const char *attr, char *value, size_t value_len);
 int etcd_del_port(struct etcd_ctx *ctx, const char *port);
+int etcd_validate_port(struct etcd_ctx *ctx, unsigned int portid);
 
 int etcd_fill_ana_groups(struct etcd_ctx *ctx, const char *port,
 			 void *buf, fuse_fill_dir_t filler);
@@ -93,6 +94,8 @@ int etcd_set_namespace_anagrp(struct etcd_ctx *ctx, const char *subsysnqn,
 int etcd_get_namespace_anagrp(struct etcd_ctx *ctx, const char *subsysnqn,
 			      int nsid, int *ana_grpid);
 int etcd_del_namespace(struct etcd_ctx *ctx, const char *subsysnqn, int nsid);
+int etcd_validate_namespace(struct etcd_ctx *ctx, const char *subsysnqn,
+			    int nsid);
 
 int etcd_count_subsys_port(struct etcd_ctx *ctx, const char *port, int *nsubsys);
 int etcd_count_ana_groups(struct etcd_ctx *ctx, const char *port, int *ngrps);

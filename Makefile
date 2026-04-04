@@ -1,9 +1,9 @@
 
 DAEMON = nvmetd-fuse
-NVMETD = nvmetd
+NVMETD = nvmetd-etcd
 CLIENT_OBJS = etcd/backend.o etcd/watcher.o etcd/client.o etcd/neon.o etcd/base64.o
-DAEMON_OBJS = daemon.o configfs.o fuse_etcd.o $(CLIENT_OBJS)
-NVMETD_OBJS = nvmetd.o inotify.o configfs.o $(CLIENT_OBJS)
+DAEMON_OBJS = daemon.o fuse_etcd.o $(CLIENT_OBJS)
+NVMETD_OBJS = nvmetd.o configfs.o inotify.o $(CLIENT_OBJS)
 CFLAGS = -Wall -g -I. -I/usr/include/fuse3
 LIBS = -ljson-c -luuid -lneon
 
@@ -14,9 +14,6 @@ $(DAEMON): $(DAEMON_OBJS)
 
 $(NVMETD): $(NVMETD_OBJS)
 	$(CC) $(CFLAGS) -o $(NVMETD) $^ $(LIBS) -lpthread
-
-$(TEST): $(TEST_OBJS)
-	$(CC) $(CFLAGS) -o $(TEST) $^ $(LIBS)
 
 firmware.h: gen_firmware_rev.sh
 	bash ./$< $@
