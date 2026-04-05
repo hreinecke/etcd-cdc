@@ -25,6 +25,24 @@
 #include "etcd/backend.h"
 #include "configfs.h"
 
+static int parse_port(char *key, unsigned int *portid, char **attr)
+{
+	char *port, *s, *eptr;
+	unsigned long p;
+
+	port = strtok_r(key, "/", &s);
+	if (!port)
+		return -EINVAL;
+	errno = 0;
+	p = strtoul(port, &eptr, 10);
+	if (errno || p > UINT_MAX)
+		return -ERANGE;
+
+	*portid = p;
+	*attr = strtok_r(NULL, "/", &s);
+	return 0;
+}
+
 static int parse_subsys_nsid(char *key, char **subsysnqn, int *nsid,
 			     char **attr)
 {
@@ -220,21 +238,29 @@ static int update_key_to_value(const char *path, char *value)
 static int validate_key(struct etcd_ctx *ctx, struct etcd_kv *kv)
 {
 	int ret = 0;
-	char *key = kv->key + strlen(ctx->prefix) + 1;
+	char *key = kv->key + strlen(ctx->prefix) + 1, *attr;
 
 	if (!strncmp(key, "ports", 5)) {
-		char *port, *eptr;
-		unsigned long portid;
+		char *arg = strdup(key + 6);
+		unsigned int portid;
 
-		port = key + 6;
-		portid = strtoul(port, &eptr, 10);
-		if (portid == ULONG_MAX || port == eptr)
-			return -ERANGE;
+		ret = parse_port(arg, &portid, &attr);
+		if (ret < 0) {
+			free(arg);
+			return ret;
+		}
+
+		if (!strcmp(attr, "addr_node")) {
+			/* Skip updates to 'addr_node' */
+			free(arg);
+			return -EINVAL;
+		}
 		ret = etcd_validate_port(ctx, portid);
+		free(arg);
 	}
 	if (!strncmp(key, "subsystems", 10)) {
 		int nsid = -1;
-		char *subsys, *attr;
+		char *subsys;
 		char *arg = strdup(key + 11);
 
 		ret = parse_subsys_nsid(arg, &subsys, &nsid, &attr);
@@ -246,14 +272,17 @@ static int validate_key(struct etcd_ctx *ctx, struct etcd_kv *kv)
 			free(arg);
 			return 0;
 		}
+		if (!strcmp(attr, "device_node")) {
+			/* Skip updates to 'device_node' */
+			free(arg);
+			return -EINVAL;
+		}
 		/* Only store 'enable' or 'device_path' values if
 		 * running on the local node */
 		if (!strcmp(attr, "enable") ||
 		    !strcmp(attr, "device_path"))
 			ret = etcd_validate_namespace(ctx, subsys, nsid);
 		free(arg);
-		if (ret < 0)
-			ret = ENOENT;
 	}
 	return ret;
 }
