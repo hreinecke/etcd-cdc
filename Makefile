@@ -1,6 +1,6 @@
 
 DAEMON = nvmetd-fuse
-NVMETD = nvmetd-etcd
+NVMETD = nvmetd
 CLIENT_OBJS = etcd/backend.o etcd/watcher.o etcd/client.o etcd/neon.o etcd/base64.o
 DAEMON_OBJS = daemon.o fuse_etcd.o $(CLIENT_OBJS)
 NVMETD_OBJS = nvmetd.o configfs.o inotify.o $(CLIENT_OBJS)
