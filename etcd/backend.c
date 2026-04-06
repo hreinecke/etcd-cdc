@@ -1077,14 +1077,17 @@ int etcd_set_namespace_attr(struct etcd_ctx *ctx, const char *subsysnqn,
 				__func__, subsysnqn, nsid);
 			return -EPERM;
 		}
-		if (ret)
+		if (ret < 0) {
 			printf("%s: subsys %s nsid %d enable error %d\n",
 			       __func__, subsysnqn, nsid, ret);
-	} else if (strcmp(value, "0")) {
+			return ret;
+		}
+	}
+	/*
+	 * Do not allow to set 'device_path' if 'device_node' is not set
+	 */
+	if (!strcmp(attr, "device_path")) {
 		char node[1024];
-		/*
-		 * Do not allow to enable it if 'device_node' is not set
-		 */
 		ret = etcd_get_namespace_attr(ctx, subsysnqn, nsid,
 					      "device_node", node,
 					      sizeof(node));
@@ -1098,7 +1101,27 @@ int etcd_set_namespace_attr(struct etcd_ctx *ctx, const char *subsysnqn,
 		       __func__, subsysnqn, nsid);
 		ret = 0;
 	}
-	/* Do not allow to set an invalid node value */
+	/*
+	 * Do not allow to enable it if 'device_path' is not set
+	 */
+	if (!strcmp(attr, "enable") && strcmp(value, "0")) {
+		char node[1024];
+		ret = etcd_get_namespace_attr(ctx, subsysnqn, nsid,
+					      "device_path", node,
+					      sizeof(node));
+		if (ret < 0 && strlen(node) == 0) {
+			fprintf(stderr,
+				"%s: subsys %s nsid %d validation error %d\n",
+				__func__, subsysnqn, nsid, ret);
+			return -EPERM;
+		}
+		printf("%s: subsys %s nsid %d validation ok\n",
+		       __func__, subsysnqn, nsid);
+		ret = 0;
+	}
+	/*
+	 * Do not allow to set 'device_node' to an invalid node value
+	 */
 	if (!strcmp(attr, "device_node")) {
 		ret = etcd_test_cluster(ctx, value);
 		if (ret < 0)
