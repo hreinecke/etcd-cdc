@@ -411,7 +411,8 @@ int upload_configfs(struct etcd_ctx *ctx, const char *dir,
 		if (ret < 0)
 			break;
 
-		if (!strcmp(se->d_name, "addr_trtype")) {
+		/* Do not set 'node' if no transport address is set */
+		if (!strcmp(se->d_name, "addr_traddr")) {
 			ret = configfs_update_key(ctx, dirname, "addr_node");
 			if (ret < 0)
 				break;

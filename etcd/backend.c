@@ -369,7 +369,8 @@ int etcd_test_port(struct etcd_ctx *ctx, const char *port)
 int etcd_set_port_attr(struct etcd_ctx *ctx, const char *port,
 		       const char *attr, const char *value, size_t value_len)
 {
-	char *key;
+	unsigned long portid;
+	char *key, *eptr;
 	int ret = -ENOENT;
 
 	/* Do not allow to set an invalid node value */
@@ -378,8 +379,23 @@ int etcd_set_port_attr(struct etcd_ctx *ctx, const char *port,
 		if (ret < 0)
 			return -EINVAL;
 	}
-	ret = asprintf(&key, "%s/ports/%s/%s",
-		       ctx->prefix, port, attr);
+
+	errno = 0;
+	portid = strtoul(port, &eptr, 10);
+	if (errno || portid > UINT_MAX)
+		return -ERANGE;
+
+	/*
+	 * Only allow to modify 'addr_traddr' if 'addr_node' is set
+	 * to the local node.
+	 */
+	if (!strcmp(attr, "addr_traddr")) {
+		ret = etcd_validate_port(ctx, portid);
+		if (ret < 0)
+			return ret;
+	}
+	ret = asprintf(&key, "%s/ports/%lu/%s",
+		       ctx->prefix, portid, attr);
 	if (ret < 0)
 		return ret;
 	ret = etcd_kv_update(ctx, key, value, value_len);
