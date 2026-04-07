@@ -153,7 +153,7 @@ static int recv_http(ne_request *ne_req, struct etcd_parse_data *data)
 		ret = ne_read_response_block(ne_req, result, alloc_size);
 		if (ret < 0) {
 			fprintf(stderr,
-				"%s: error %d during read, %ld bytes read",
+				"%s: error %d during read, %ld bytes read\n",
 				__func__, ret, result_size);
 			break;
 		}
@@ -202,7 +202,7 @@ int etcd_kv_exec(struct etcd_conn_ctx *conn, const char *uri,
 	postlen = strlen(post);
 
 	if (http_debug)
-		printf("%s: %s", __func__, post);
+		printf("%s: %s\n", __func__, post);
 retry:
 	ne_req = format_hdr(conn, uri);
 	if (!ne_req)
