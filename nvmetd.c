@@ -28,12 +28,8 @@
 int stopped = 0;
 sigset_t mask;
 
-bool port_debug;
-bool ep_debug;
 bool etcd_debug;
 bool http_debug;
-bool tcp_debug;
-bool cmd_debug;
 bool inotify_debug;
 bool configfs_debug;
 
@@ -148,8 +144,7 @@ int main(int argc, char **argv)
 			break;
 		case 'v':
 			etcd_debug = true;
-			port_debug = true;
-			ep_debug = true;
+			http_debug = true;
 			inotify_debug = true;
 			break;
 		case 'w':
