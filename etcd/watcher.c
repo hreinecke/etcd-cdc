@@ -223,7 +223,8 @@ static int update_key_to_value(const char *path, char *value)
 			buf[ret] = '\0';
 			ret --;
 		}
-		printf("%s: update from %s to %s\n", __func__, buf, value);
+		printf("%s: update from %s (size %d) to %s\n",
+		       __func__, buf, ret, value);
 		ret = write(fd, value, strlen(value));
 		if (ret < 0) {
 			printf("%s: failed to update %s, error %d\n",
