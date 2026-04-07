@@ -1358,7 +1358,7 @@ int etcd_set_cluster_id(struct etcd_ctx *ctx)
 
 			errno = 0;
 			id = strtoul(kvs[i].value, &eptr, 10);
-			node_num = id;
+			node_num = id + 1;
 		}
 			
 		if (strcmp(attr, "/node_name"))
