@@ -223,6 +223,8 @@ retry:
 	parse_data.persistent = persistent;
 
 	ret = recv_http(ne_req, &parse_data);
+	if (ret < 0)
+		goto out_free;
 	switch (ne_end_request(ne_req)) {
 	case NE_RETRY:
 		if (http_debug)
@@ -236,7 +238,7 @@ retry:
 	default:
 		break;
 	}
-
+out_free:
 	free(parse_data.uri);
 	json_tokener_free(parse_data.tokener);
 

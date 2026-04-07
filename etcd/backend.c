@@ -1364,7 +1364,7 @@ int etcd_set_cluster_id(struct etcd_ctx *ctx)
 		if (strcmp(attr, "/node_name"))
 			continue;
 		if (!strcmp(kvs[i].value, ctx->node_name)) {
-			cluster_id = node_num;
+			cluster_id = node_num % ctx->cluster_size;
 			break;
 		}
 		node_num++;
