@@ -155,7 +155,7 @@ static int recv_http(ne_request *ne_req, struct etcd_parse_data *data)
 			fprintf(stderr,
 				"%s: error %d during read, %ld bytes read\n",
 				__func__, errno, result_size);
-			ret = -errno;
+			ret = -ETIME;
 			break;
 		}
 		if (ret == 0) {
@@ -224,8 +224,16 @@ retry:
 	parse_data.persistent = persistent;
 
 	ret = recv_http(ne_req, &parse_data);
-	if (ret < 0)
+	if (ret < 0) {
+		ne_request_destroy(ne_req);
+		if (ret == -ETIME) {
+			if (http_debug)
+				printf("%s: retry request %s after timeout\n",
+				       __func__, uri);
+			goto retry;
+		}
 		goto out_free;
+	}
 	switch (ne_end_request(ne_req)) {
 	case NE_RETRY:
 		if (http_debug)
