@@ -15,6 +15,7 @@ int configfs_update_key(struct etcd_ctx *ctx, const char *dirname,
 			const char *name);
 int upload_configfs(struct etcd_ctx *ctx, const char *dir,
 		    const char *file);
+int download_configfs(struct etcd_ctx *ctx, const char *dir);
 int configfs_validate_cluster(struct etcd_ctx *ctx);
 int configfs_load_ana(struct etcd_ctx *ctx);
 int configfs_validate_ana(struct etcd_ctx *ctx);

@@ -436,6 +436,28 @@ int upload_configfs(struct etcd_ctx *ctx, const char *dir,
 	return ret;
 }
 
+int download_configfs(struct etcd_ctx *ctx, const char *dir)
+{
+	struct etcd_kv *kvs;
+	char *key;
+	int ret, i;
+
+	ret = asprintf(&key, "%s/%s/", ctx->prefix, dir);
+	if (ret < 0)
+		return ret;
+	ret = etcd_kv_range(ctx, key, &kvs);
+	free(key);
+	if (ret < 0)
+		return ret;
+	for (i = 0; i < ret; i++) {
+		struct etcd_kv *kv = &kvs[i];
+
+		etcd_watch_cb(ctx, kv);
+	}
+	etcd_kv_free(kvs, ret);
+	return ret;
+}
+
 static int validate_cntlid(struct etcd_ctx *ctx, char *subsys,
 			   char *value, bool cntlid_max)
 {
