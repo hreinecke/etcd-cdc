@@ -1335,125 +1335,50 @@ int etcd_get_cluster_attr(struct etcd_ctx *ctx, const char *node,
 
 int etcd_set_cluster_id(struct etcd_ctx *ctx)
 {
-	char key[256], value[256], *eptr;
-	uint64_t cur_map = ULONG_MAX;
-	int ret, map_num;
+	char key[256], value[32];
+	long cluster_id = -1;
+	int ret, num_kvs, i, node_num = 0;
+	struct etcd_kv *kvs;
 
-	for (map_num = 0; map_num < 4; map_num++) {
-		sprintf(key, "%s/cluster/map/%d", ctx->prefix, map_num);
-		ret = etcd_kv_get(ctx, key, value, sizeof(value));
-		if (ret < 0) {
-			if (ret != -ENOENT) {
-				fprintf(stderr,
-					"%s: failed to get cluster map '%d'\n",
-					__func__, map_num);
-				return ret;
-			}
-			cur_map = 0;
+	sprintf(key, "%s/cluster/", ctx->prefix);
+	ret = etcd_kv_range(ctx, key, &kvs);
+	if (ret < 0)
+		return -ENOMEM;
+	num_kvs = ret;
+	for (i = 0; i < num_kvs; i++) {
+		const char *attr = strrchr(kvs[i].key, '/');
+
+		if (!attr)
+			continue;
+
+		/* check the lowest cluster id to use as offset */
+		if (cluster_id == -1 && !strcmp(attr, "/cluster_id")) {
+			unsigned long id;
+			char *eptr;
+
+			errno = 0;
+			id = strtoul(kvs[i].value, &eptr, 10);
+			node_num = id;
+		}
+			
+		if (strcmp(attr, "/node_name"))
+			continue;
+		if (!strcmp(kvs[i].value, ctx->node_name)) {
+			cluster_id = node_num;
 			break;
 		}
-
-		errno = 0;
-		cur_map = strtoul(value, &eptr, 10);
-		if (errno || value == eptr) {
-			fprintf(stderr,
-				"%s: parsing error on cluster map '%s'\n",
-				__func__, value);
-			return -EINVAL;
-		}
-		if (cur_map != ULONG_MAX)
-			break;
-		map_num ++;
+		node_num++;
 	}
-	if (!cur_map) {
-		ctx->cluster_id = (map_num * 64);
-		cur_map = 1;
-		sprintf(value, "%lu" , cur_map);
-		printf("%s: using cluster id %d\n",
-		       __func__, ctx->cluster_id);
-		ret = etcd_kv_store(ctx, key, value, strlen(value));
-		if (ret < 0) {
-			fprintf(stderr, "%s: failed to set cluster map to '%s'\n",
-				__func__, value);
-		}
-	} else {
-		char new_value[256], cur_value[256];
-		int id = -1;
-		uint64_t tmp_map;
+	if (cluster_id < 0)
+		return -ENOENT;
 
-		tmp_map = cur_map;
-		while (tmp_map) {
-			id = ffsll(tmp_map);
-			if (!id)
-				break;
-
-			tmp_map &= ~(1 << (id - 1));
-			printf("%s: checking id %u map %lu\n",
-			       __func__, id, tmp_map);
-		}
-		ctx->cluster_id = (map_num * 64) + id;
-		printf("%s: found cluster id %d\n",
-		       __func__, ctx->cluster_id);
-
-		cur_map |= (1 << id);
-		sprintf(new_value, "%lu", cur_map);
-		printf("%s: updating map %d from '%s' to '%s'\n",
-		       __func__, map_num, value, new_value);
-		ret = etcd_kv_txn_update(ctx, key, value, new_value,
-					 cur_value, sizeof(cur_value));
-		if (ret < 0) {
-			fprintf(stderr,
-				"%s: failed to set cluster map '%s' to '%s'\n",
-				__func__, value, new_value);
-			return ret;
-		}
-	}
-	sprintf(key, "%s/cluster/%s/node_id",
-		ctx->prefix, ctx->node_id);
-	ret = sprintf(value, "%d", ctx->cluster_id);
-	ret = etcd_kv_store(ctx, key, value, ret);
+	sprintf(key, "%s/cluster/%s/cluster_id", ctx->prefix, ctx->node_id);
+	sprintf(value, "%ld", cluster_id);
+	ret = etcd_kv_store(ctx, key, value, strlen(value));
 	if (ret < 0) {
-		fprintf(stderr, "%s: node %s register error %d\n",
-			__func__, ctx->node_id, ret);
+		fprintf(stderr, "%s: node %s failed to store cluster id\n",
+			__func__, ctx->node_name);
 	}
-	return ret;
-}
-
-int etcd_unset_cluster_id(struct etcd_ctx *ctx)
-{
-	char key[256], old[256], new[256], cur[256], *eptr;
-	uint64_t cur_map = ULONG_MAX, id;
-	int ret, map;
-
-	id = ctx->cluster_id % 64;
-	map = ctx->cluster_id / 64;
-	sprintf(key, "%s/cluster/map/%d", ctx->prefix, map);
-	ret = etcd_kv_get(ctx, key, old, sizeof(old));
-	if (ret < 0) {
-		fprintf(stderr, "%s: failed to get cluster map '%d'\n",
-			__func__, map);
-		return ret;
-	}
-
-	errno = 0;
-	cur_map = strtoul(old, &eptr, 10);
-	if (errno || old == eptr) {
-		fprintf(stderr,
-			"%s: parsing error on cluster map '%d' value '%s'\n",
-			__func__, map, old);
-		return -EINVAL;
-	}
-
-	cur_map &= ~(1 << id);
-	sprintf(new, "%lu", cur_map);
-	printf("%s: updating map '%d from '%s' to '%s'\n",
-	       __func__, map, old, new);
-	ret = etcd_kv_txn_update(ctx, key, old, new,
-				 cur, sizeof(cur));
-	if (ret < 0) {
-		fprintf(stderr,
-			"%s: failed to update cluster map '%d', error %d\n",
-			__func__, map, ret);
-	}
+	ctx->cluster_id = cluster_id;
 	return ret;
 }

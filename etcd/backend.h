@@ -109,7 +109,6 @@ int etcd_test_cluster(struct etcd_ctx *ctx, const char *node);
 int etcd_get_cluster_attr(struct etcd_ctx *ctx, const char *node,
 			  const char *attr, char *value, size_t value_len);
 int etcd_set_cluster_id(struct etcd_ctx *ctx);
-int etcd_unset_cluster_id(struct etcd_ctx *ctx);
 
 #endif /* _ETCD_BACKEND_H */
 

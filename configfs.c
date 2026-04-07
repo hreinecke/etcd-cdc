@@ -997,6 +997,9 @@ int configfs_register(struct etcd_ctx *ctx)
 	if (ret < 0) {
 		etcd_kv_delete(ctx, name_key);
 	}
+	if (configfs_debug)
+		printf("%s: using cluster id %u\n",
+		       __func__, ctx->cluster_id);
 	return ret;
 }
 
@@ -1005,9 +1008,6 @@ int configfs_unregister(struct etcd_ctx *ctx)
 	char name_key[256];
 	int ret;
 
-	ret = etcd_unset_cluster_id(ctx);
-	if (ret < 0)
-		return ret;
 	sprintf(name_key, "%s/cluster/%s/",
 		ctx->prefix, ctx->node_id);
 	ret = etcd_kv_delete(ctx, name_key);
