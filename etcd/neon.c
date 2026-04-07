@@ -226,12 +226,9 @@ retry:
 	ret = recv_http(ne_req, &parse_data);
 	if (ret < 0) {
 		ne_request_destroy(ne_req);
-		if (ret == -ETIME) {
-			if (http_debug)
-				printf("%s: retry request %s after timeout\n",
-				       __func__, uri);
-			goto retry;
-		}
+		if (http_debug)
+			printf("%s: retry request %s after timeout\n",
+			       __func__, uri);
 		goto out_free;
 	}
 	switch (ne_end_request(ne_req)) {
