@@ -467,13 +467,17 @@ static int validate_cntlid(struct etcd_ctx *ctx, char *subsys,
 	int ret = 0;
 
 	cluster_spacing = (CLUSTER_MAX_SIZE / ctx->cluster_size);
+	errno = 0;
 	cntlid = strtoul(value, &eptr, 10);
-	if (cntlid == ULONG_MAX || value == eptr) {
+	if (errno || cntlid == ULONG_MAX) {
 		fprintf(stderr, "%s: %s parse error on %s\n",
 			__func__, subsys, value);
 		return -ERANGE;
 	}
-	/* Controller ID 0 is invalid */
+	/*
+	 * Controller ID 1 means 'first available controller',
+	 * so move it to '0' to simp;lify calculations.
+	 */
 	if (cntlid == 1)
 		cntlid = 0;
 	else if (cntlid_max) {
