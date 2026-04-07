@@ -213,12 +213,16 @@ static int update_key_to_value(const char *path, char *value)
 		       __func__, path);
 		return -errno;
 	}
-
+	memset(buf, 0, sizeof(buf));
 	ret = read(fd, buf, 256);
 	if (ret < 0) {
 		printf("error reading %s\n", path);
 		ret = -errno;
-	} else if (strncmp(value, buf, strlen(value))) {
+	} else {
+		if (ret > 0 && buf[ret - 1] == '\n') {
+			buf[ret] = '\0';
+			ret --;
+		}
 		printf("update from %s to %s\n", buf, value);
 		ret = write(fd, value, strlen(value));
 		if (ret < 0) {
