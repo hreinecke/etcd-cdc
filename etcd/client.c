@@ -172,8 +172,6 @@ etcd_parse_kvs(struct json_object *resp, struct etcd_kv_event *ev)
 
 	kvs_obj = json_object_object_get(resp, "kvs");
 	if (!kvs_obj) {
-		if (etcd_debug)
-			fprintf(stderr, "%s: no kv entries\n", __func__);
 		ev->num_kvs = 0;
 		return;
 	}
