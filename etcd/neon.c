@@ -154,7 +154,8 @@ static int recv_http(ne_request *ne_req, struct etcd_parse_data *data)
 		if (ret < 0) {
 			fprintf(stderr,
 				"%s: error %d during read, %ld bytes read\n",
-				__func__, ret, result_size);
+				__func__, errno, result_size);
+			ret = -errno;
 			break;
 		}
 		if (ret == 0) {
