@@ -218,29 +218,34 @@ static int update_key_to_value(const char *path, char *value)
 	if (ret < 0) {
 		printf("%s: error reading %s\n", __func__, path);
 		ret = -errno;
-	} else {
-		if (ret > 0) {
-			buf[ret] = '\0';
-			if (buf[ret - 1] == '\n') {
-				buf[ret - 1] = '\0';
-				ret --;
-			}
-		}
-		printf("%s: update from %s (size %d) to %s\n",
-		       __func__, buf, ret, value);
-		ret = write(fd, value, strlen(value));
-		if (ret < 0) {
-			printf("%s: failed to update %s, error %d\n",
-			       __func__, path, errno);
-			/* reset to original value */
-			if (write(fd, buf, strlen(buf)) < 0) {
-				printf("%s: failed to reset %s, error %d\n",
-				       __func__, path, errno);
-			}
-			ret = -errno;
+		goto out_close;
+	}
+	/* Remove newlines from 'buf' */
+	if (ret > 0) {
+		buf[ret] = '\0';
+		if (buf[ret - 1] == '\n') {
+			buf[ret - 1] = '\0';
+			ret --;
 		}
 	}
+	if (!strcmp(buf, value))
+		goto out_close;
 
+	printf("%s: update from %s (size %d) to %s\n",
+	       __func__, buf, ret, value);
+	ret = write(fd, value, strlen(value));
+	if (ret < 0) {
+		printf("%s: failed to update %s, error %d\n",
+		       __func__, path, errno);
+		/* reset to original value */
+		if (write(fd, buf, strlen(buf)) < 0) {
+			printf("%s: failed to reset %s, error %d\n",
+			       __func__, path, errno);
+		}
+		ret = -errno;
+	}
+
+out_close:
 	close(fd);
 	return ret;
 }
