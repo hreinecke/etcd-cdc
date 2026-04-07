@@ -265,6 +265,8 @@ static int validate_key(struct etcd_ctx *ctx, struct etcd_kv *kv)
 
 		ret = parse_subsys_nsid(arg, &subsys, &nsid, &attr);
 		if (ret < 0) {
+			printf("%s: failed to parse subsystem '%s'\n",
+			       __func__, arg);
 			free(arg);
 			return ret;
 		}
@@ -280,8 +282,12 @@ static int validate_key(struct etcd_ctx *ctx, struct etcd_kv *kv)
 		/* Only store 'enable' or 'device_path' values if
 		 * running on the local node */
 		if (!strcmp(attr, "enable") ||
-		    !strcmp(attr, "device_path"))
+		    !strcmp(attr, "device_path")) {
 			ret = etcd_validate_namespace(ctx, subsys, nsid);
+			if (ret < 0)
+				printf("%s: failed to validate subsys '%s' nsid %d\n",
+				       __func__, subsys, nsid);
+		}
 		free(arg);
 	}
 	return ret;
