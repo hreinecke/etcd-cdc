@@ -53,7 +53,6 @@ static int parse_subsys_nsid(char *key, char **subsysnqn, int *nsid,
 	*subsysnqn = strtok_r(key, "/", &s);
 	if (!*subsysnqn)
 		goto out;
-
 	*attr = strtok_r(NULL, "/", &s);
 	if (!*attr)
 		goto out;
@@ -74,8 +73,11 @@ static int parse_subsys_nsid(char *key, char **subsysnqn, int *nsid,
 		p = strtok_r(NULL, "/", &s);
 		if (p)
 			goto out;
-	} else
+		ret = 0;
+	} else {
 		*nsid = -1;
+		ret = 0;
+	}
 
 out:
 	if (ret < 0) {
