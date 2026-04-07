@@ -331,11 +331,6 @@ void etcd_watch_cb(void *arg, struct etcd_kv *kv)
 		if (kv->deleted)
 			/* KV deleted and path not present, all done */
 			goto out_free;
-		if (strcmp(kv->key, "discovery_nqn")) {
-			printf("%s: skip discovery NQN updates\n",
-			       __func__);
-			goto out_free;
-		}
 		ret = validate_key(ctx, kv);
 		if (ret < 0) {
 			printf("%s: skip key %s creation\n",
