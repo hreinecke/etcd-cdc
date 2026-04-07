@@ -219,9 +219,12 @@ static int update_key_to_value(const char *path, char *value)
 		printf("%s: error reading %s\n", __func__, path);
 		ret = -errno;
 	} else {
-		if (ret > 0 && buf[ret - 1] == '\n') {
+		if (ret > 0) {
 			buf[ret] = '\0';
-			ret --;
+			if (buf[ret - 1] == '\n') {
+				buf[ret - 1] = '\0';
+				ret --;
+			}
 		}
 		printf("%s: update from %s (size %d) to %s\n",
 		       __func__, buf, ret, value);
