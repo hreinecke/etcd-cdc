@@ -152,9 +152,10 @@ static int recv_http(ne_request *ne_req, struct etcd_parse_data *data)
 	while (true) {
 		ret = ne_read_response_block(ne_req, result, alloc_size);
 		if (ret < 0) {
-			fprintf(stderr,
-				"%s: error %d during read, %ld bytes read\n",
-				__func__, errno, result_size);
+			if (http_debug)
+				fprintf(stderr,
+					"%s: error %d during read, %ld bytes read\n",
+					__func__, ret, result_size);
 			ret = -ETIME;
 			break;
 		}
