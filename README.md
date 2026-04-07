@@ -16,8 +16,7 @@ filesystem.
 
 ## nvmet configfs considerations
 Each subsystem will be extended across all nodes in the cluster.
-Due to limitations in the linux kernel that implies that the ANA
-group IDs are global throughout the cluster, too.
+
 In the absense of a distributed storage system each namespace will
 be local to the node providing that namespace. To handle this a new
 namespace attribute 'device_node' is presented, which specifies on

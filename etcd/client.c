@@ -850,22 +850,23 @@ int etcd_lease_grant(struct etcd_ctx *ctx)
 				__func__, ret);
 			ret = ev.error;
 		} else if (!ev.kvs->lease) {
-			fprintf(stderr, "%s: no lease has been granted",
+			fprintf(stderr, "%s: no lease has been granted\n",
 				__func__);
 			ret = -ENOKEY;
 		} else if (ev.kvs->ttl < 0) {
-			fprintf(stderr, "%s: invalid time-to-live value %ld",
+			fprintf(stderr,
+				"%s: invalid time-to-live value %ld\n",
 				__func__, ev.kvs->ttl);
 			ret = -EINVAL;
 		} else {
 			ctx->lease = ev.kvs->lease;
 			ctx->ttl = ev.kvs->ttl;
 			if (etcd_debug)
-				printf("%s: Granted lease %ld ttl %d",
+				printf("%s: Granted lease %ld ttl %d\n",
 				       __func__, ctx->lease, ctx->ttl);
 		}
 	} else
-		fprintf(stderr, "%s: etcd lease call failed with %d",
+		fprintf(stderr, "%s: etcd lease call failed with %d\n",
 			__func__, ret);
 
 	json_object_put(post_obj);
