@@ -1,16 +1,16 @@
 
 FUSE = nvmetd_fuse
 INOTIFY = nvmetd_inotify
-WATCHER = nvmetd_etcd
+ETCD = nvmetd_etcd
 CLIENT_OBJS = etcd/backend.o etcd/watcher.o etcd/client.o etcd/neon.o etcd/base64.o
 FUSE_OBJS = nvmetd_fuse.o fuse_etcd.o $(CLIENT_OBJS)
 INOTIFY_OBJS = nvmetd_inotify.o configfs.o inotify.o $(CLIENT_OBJS)
-WATCHER_OBJS = nvmetd_etcd.o configfs.o $(CLIENT_OBJS)
+ETCD_OBJS = nvmetd_etcd.o configfs.o $(CLIENT_OBJS)
 
 CFLAGS = -Wall -g -I. -I/usr/include/fuse3
 LIBS = -ljson-c -luuid -lneon
 
-all:	$(FUSE) $(INOTIFY) $(WATCHER)
+all:	$(FUSE) $(INOTIFY) $(ETCD)
 
 $(FUSE): $(FUSE_OBJS)
 	$(CC) $(CFLAGS) -o $(FUSE) $^ $(LIBS) -lpthread -lfuse3
@@ -18,14 +18,14 @@ $(FUSE): $(FUSE_OBJS)
 $(INOTIFY): $(INOTIFY_OBJS)
 	$(CC) $(CFLAGS) -o $(INOTIFY) $^ $(LIBS) -lpthread
 
-$(WATCHER): $(WATCHER_OBJS)
-	$(CC) $(CFLAGS) -o $(WATCHER) $^ $(LIBS) -lpthread
+$(ETCD): $(ETCD_OBJS)
+	$(CC) $(CFLAGS) -o $(ETCD) $^ $(LIBS) -lpthread
 
 firmware.h: gen_firmware_rev.sh
 	bash ./$< $@
 
 clean:
-	$(RM) firmware.h *.o $(DAEMON_OBJS) $(NVMETD_OBJS) $(DAEMON) $(NVMETD)
+	$(RM) firmware.h *.o $(FUSE) $(INOTIFY) $(ETCD)
 
 daemon.o: daemon.c common.h nvme.h etcd/client.h etcd/backend.h
 nvmetd.o: nvmetd.c nvmetd.h etcd/client.h
