@@ -252,6 +252,14 @@ store_key:
 			free(key);
 			goto out_free;
 		}
+		if (!strlen(value)) {
+			if (configfs_debug)
+				printf("%s: empty key %s, not uploading\n",
+				       __func__, key);
+			ret = 0;
+			free(key);
+			goto out_free;
+		}
 		if (configfs_debug)
 			printf("%s: upload key %s value '%s'\n", __func__,
 			       key, value);
@@ -267,7 +275,10 @@ store_key:
 			printf("%s: update key %s value '%s'\n", __func__,
 			       key, value);
 
-		ret = etcd_kv_update(ctx, key, value, strlen(value));
+		if (!strlen(value))
+			ret = etcd_kv_delete(ctx, key);
+		else
+			ret = etcd_kv_update(ctx, key, value, strlen(value));
 		if (ret < 0)
 			fprintf(stderr, "%s: key %s update error %d\n",
 				__func__, key, ret);
