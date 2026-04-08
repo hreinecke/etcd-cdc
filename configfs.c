@@ -590,9 +590,13 @@ static int validate_namespaces(struct etcd_ctx *ctx, const char *subsys)
 
 		printf("%s: validating subsys %s ns %s\n",
 		       __func__, subsys, se->d_name);
+		errno = 0;
 		nsid = strtoul(se->d_name, NULL, 10);
-		if (nsid == ULONG_MAX)
+		if (errno || nsid == ULONG_MAX) {
+			fprintf(stderr, "%s: parse error on ns '%s'\n",
+				__func__, se->d_name);
 			continue;
+		}
 		printf("%s: validate %s namespace %lu\n",
 		       __func__, subsys, nsid);
 
@@ -600,15 +604,18 @@ static int validate_namespaces(struct etcd_ctx *ctx, const char *subsys)
 		if (ret < 0) {
 			if (ret == -EREMOTE) {
 				fprintf(stderr,
-					"%s: subsys %s namespace %s is remote\n",
-					__func__, subsys, se->d_name);
+					"%s: subsys %s namespace %lu is remote\n",
+					__func__, subsys, nsid);
+				continue;
+			} else if (ret != -ENOENT) {
+				fprintf(stderr,
+					"%s: subsys %s namespce %lu error %d\n",
+					__func__, subsys, nsid, ret);
 				continue;
 			}
-			if (ret != -ENOENT) {
-				ret = etcd_test_namespace(ctx, subsys, nsid);
-				if (ret < 0)
-					continue;
-			}
+			printf("%s: subsys %s namespace %lu does not exist\n",
+			       __func__, subsys, nsid);
+			ret = 0;
 		}
 		ret = validate_ana_grpid(ctx, subsys, se->d_name);
 		if (ret < 0)
