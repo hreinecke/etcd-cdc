@@ -35,38 +35,6 @@
  * ana/<grpid>/subsystems/<subsys>/<nsid>/enabled: 0/1
  */
 
-int find_ana_group(struct etcd_ctx *ctx, unsigned int ana_grpid)
-{
-	struct etcd_kv *kvs;
-	int ret;
-	char *key;
-
-	ret = asprintf(&key, "%s/ana/%u", ctx->prefix, ana_grpid);
-	if (ret < 0)
-		return -ENOMEM;
-
-	ret = etcd_kv_range(ctx, key, &kvs);
-	free(key);
-	return ret;
-}
-
-int find_ana_namespace(struct etcd_ctx *ctx, unsigned int ana_grpid,
-			const char *subsys, const char *ns)
-{
-	char value[16];
-	int ret;
-	char *key;
-
-	ret = asprintf(&key, "%s/ana/%u/subsystems/%s/%s/enabled",
-		       ctx->prefix, ana_grpid, subsys, ns);
-	if (ret < 0)
-		return -ENOMEM;
-
-	ret = etcd_kv_get(ctx, key, value, sizeof(value));
-	free(key);
-	return ret;
-}
-
 int update_ana_namespace(struct etcd_ctx *ctx, unsigned int ana_grpid,
 			 const char *subsys, const char *ns, bool enabled)
 {
@@ -74,14 +42,28 @@ int update_ana_namespace(struct etcd_ctx *ctx, unsigned int ana_grpid,
 	int ret;
 	char *key;
 
-	ret = asprintf(&key, "%s/ana/%u/subsystems/%s/%s/enabled",
+	ret = asprintf(&key, "%s/ana/%u/subsystems/%s/nsid/%s/enabled",
 		       ctx->prefix, ana_grpid, subsys, ns);
 	if (ret < 0)
 		return -ENOMEM;
 
-	memset(value, 0, sizeof(value));
-	sprintf(value, "%d", enabled ? 1 : 0);
-	ret = etcd_kv_store(ctx, key, value, strlen(value));
+	ret = etcd_kv_get(ctx, key, value, sizeof(value));
+	if (ret < 0) {
+		sprintf(value, "%d", enabled ? 1 : 0);
+		ret = etcd_kv_store(ctx, key, value, strlen(value));
+		if (ret < 0)
+			fprintf(stderr,
+				"%s: subsys %s ns %s failed to add grpid %u\n",
+				__func__, subsys, ns, ana_grpid);
+	} else if ((value[0] == '0' && enabled) ||
+		   (value[1] == '1' && !enabled)) {
+		sprintf(value, "%d", enabled ? 1 : 0);
+		ret = etcd_kv_update(ctx, key, value, strlen(value));
+		if (ret < 0)
+			fprintf(stderr,
+				"%s: subsys %s ns %s failed to update grpid %u\n",
+				__func__, subsys, ns, ana_grpid);
+	}
 	free(key);
 	return ret < 0 ? ret : 0;
 }
@@ -538,24 +520,8 @@ static int validate_ana_grpid(struct etcd_ctx *ctx, const char *subsys,
 			subsys, ns, value);
 		return -ERANGE;
 	}
-	ret = find_ana_namespace(ctx, ana_grpid, subsys, ns);
-	if (!ret) {
-		fprintf(stderr, "subsys %s ns %s allocated with grpid %lu\n",
-			subsys, ns, ana_grpid);
-		return -EEXIST;
-	}
-	ret = update_ana_namespace(ctx, ana_grpid, subsys, ns,
+	return update_ana_namespace(ctx, ana_grpid, subsys, ns,
 				   ns_enabled);
-	if (ret < 0) {
-		fprintf(stderr,
-			"%s: subsys %s ns %s failed to store grpid %lu\n",
-			__func__, subsys, ns, ana_grpid);
-	} else {
-		printf("%s: adding subsys %s ns %s to ANA group %lu\n",
-		       __func__, subsys, ns, ana_grpid);
-	}
-
-	return ret;
 }
 
 static int validate_namespaces(struct etcd_ctx *ctx, const char *subsys)
