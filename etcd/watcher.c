@@ -311,14 +311,15 @@ static int validate_key(struct etcd_ctx *ctx, struct etcd_kv *kv)
 char *key_to_attr(struct etcd_ctx *ctx, char *key)
 {
 	const char *attr = key + strlen(ctx->prefix) + 1;
-	char *path;
+	char *path, *a;
 	int ret;
 
 	if (!strncmp(attr, "cluster", strlen("cluster")))
 		return NULL;
 
-	if (!strcmp(attr, "cntlid_min") ||
-	    !strcmp(attr, "cntlid_max"))
+	a = strrchr(attr, '/');
+	if (!strcmp(a, "/cntlid_min") ||
+	    !strcmp(a, "/cntlid_max"))
 		return NULL;
 
 	ret = asprintf(&path, "%s/%s", ctx->configfs, attr);
