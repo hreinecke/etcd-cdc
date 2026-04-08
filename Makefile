@@ -1,10 +1,10 @@
 
 FUSE = nvmetd_fuse
-INOTIFY = nvmetd-inotify
+INOTIFY = nvmetd_inotify
 WATCHER = nvmetd_etcd
 CLIENT_OBJS = etcd/backend.o etcd/watcher.o etcd/client.o etcd/neon.o etcd/base64.o
 FUSE_OBJS = nvmetd_fuse.o fuse_etcd.o $(CLIENT_OBJS)
-INOTIFY_OBJS = nvmetd.o configfs.o inotify.o $(CLIENT_OBJS)
+INOTIFY_OBJS = nvmetd_inotify.o configfs.o inotify.o $(CLIENT_OBJS)
 WATCHER_OBJS = nvmetd_etcd.o configfs.o $(CLIENT_OBJS)
 
 CFLAGS = -Wall -g -I. -I/usr/include/fuse3

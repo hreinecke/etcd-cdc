@@ -1,5 +1,5 @@
 nvmetd_fuse
-nvmetd-inotify
+nvmetd_inotify
 nvmetd_etcd
 *.o
 firmware.h
