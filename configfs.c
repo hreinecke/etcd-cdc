@@ -626,7 +626,7 @@ int validate_cntlid_range(struct etcd_ctx *ctx, char *dirname, char *subsys)
 		free(path);
 		return ret;
 	}
-	if (validate_cntlid(ctx, subsys, value, false) == 0) {
+	if (validate_cntlid(ctx, subsys, value, false) > 0) {
 		ret = write_attr(path, value, strlen(value));
 		if (ret < 0) {
 			fprintf(stderr,
@@ -648,7 +648,7 @@ int validate_cntlid_range(struct etcd_ctx *ctx, char *dirname, char *subsys)
 		free(path);
 		return ret;
 	}
-	if (validate_cntlid(ctx, subsys, value, true) == 0) {
+	if (validate_cntlid(ctx, subsys, value, true) > 0) {
 		ret = write_attr(path, value, strlen(value));
 		if (ret < 0) {
 			fprintf(stderr,

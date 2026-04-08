@@ -318,8 +318,8 @@ char *key_to_attr(struct etcd_ctx *ctx, char *key)
 		return NULL;
 
 	a = strrchr(attr, '/');
-	if (!strcmp(a, "/cntlid_min") ||
-	    !strcmp(a, "/cntlid_max"))
+	if (!strcmp(a, "/attr_cntlid_min") ||
+	    !strcmp(a, "/attr_cntlid_max"))
 		return NULL;
 
 	ret = asprintf(&path, "%s/%s", ctx->configfs, attr);
