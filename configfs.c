@@ -284,8 +284,8 @@ out_free:
 	return ret;
 }
 
-int upload_configfs(struct etcd_ctx *ctx, const char *dir,
-		    const char *file)
+static int configfs_upload_key(struct etcd_ctx *ctx, const char *dir,
+			       const char *file)
 {
 	char *dirname;
 	DIR *sd;
@@ -342,7 +342,7 @@ int upload_configfs(struct etcd_ctx *ctx, const char *dir,
 				break;
 		}
 		if (se->d_type == DT_DIR) {
-			ret = upload_configfs(ctx, dirname, se->d_name);
+			ret = configfs_upload_key(ctx, dirname, se->d_name);
 			if (ret < 0)
 				break;
 		}
@@ -350,6 +350,33 @@ int upload_configfs(struct etcd_ctx *ctx, const char *dir,
 
 	closedir(sd);
 	free(dirname);
+	return ret < 0 ? ret : 0;
+}
+
+int upload_configfs(struct etcd_ctx *ctx)
+{
+	int ret;
+
+	ret = configfs_upload_key(ctx, ctx->configfs, "ports");
+	if (ret < 0) {
+		if (configfs_debug)
+			fprintf(stderr,
+				"failed to upload port configuration\n");
+		return ret;
+	}
+	ret = configfs_upload_key(ctx, ctx->configfs, "hosts");
+	if (ret < 0) {
+		if (configfs_debug)
+			fprintf(stderr,
+				"failed to upload hosts configuration\n");
+		return ret;
+	}
+	ret = configfs_upload_key(ctx, ctx->configfs, "subsystems");
+	if (ret < 0) {
+		if (configfs_debug)
+			fprintf(stderr,
+				"failed to upload subsystem configuration\n");
+	}
 	return ret;
 }
 

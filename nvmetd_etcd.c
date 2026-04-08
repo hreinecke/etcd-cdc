@@ -224,21 +224,10 @@ int main(int argc, char **argv)
 		fprintf(stderr, "ANA validation failed\n");
 		goto out_unregister;
 	}
-	ret = upload_configfs(ctx, ctx->configfs, "ports");
-	if (ret < 0) {
-		fprintf(stderr, "failed to upload port configuration\n");
+	ret = upload_configfs(ctx);
+	if (ret < 0)
 		goto out_unregister;
-	}
-	ret = upload_configfs(ctx, ctx->configfs, "hosts");
-	if (ret < 0) {
-		fprintf(stderr, "failed to upload hosts configuration\n");
-		goto out_unregister;
-	}
-	ret = upload_configfs(ctx, ctx->configfs, "subsystems");
-	if (ret < 0) {
-		fprintf(stderr, "failed to upload subsystem configuration\n");
-		goto out_unregister;
-	}
+
 	ret = download_configfs(ctx, "hosts");
 	if (ret < 0) {
 		fprintf(stderr, "failed to download hosts configuration\n");
