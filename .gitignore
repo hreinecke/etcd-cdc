@@ -1,4 +1,4 @@
-nvmetd-fuse
+nvmetd_fuse
 nvmetd-inotify
 nvmetd_etcd
 *.o

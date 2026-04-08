@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: DUAL GPL-2.0/BSD */
 /*
  * nvmetd_etcd.c
- * etcd watcher to manage nvmet configfs
+ * configfs interface for nvmet etcd
  *
  * Copyright (c) 2024 Hannes Reinecke <hare@suse.de>
  */
