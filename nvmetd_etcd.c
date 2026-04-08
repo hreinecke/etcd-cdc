@@ -219,11 +219,6 @@ int main(int argc, char **argv)
 		fprintf(stderr, "cluster validation failed\n");
 		goto out_unregister;
 	}
-	ret = configfs_validate_ana(ctx);
-	if (ret < 0) {
-		fprintf(stderr, "ANA validation failed\n");
-		goto out_unregister;
-	}
 
 	/* Synchronize with etcd */
 	ret = upload_configfs(ctx);
