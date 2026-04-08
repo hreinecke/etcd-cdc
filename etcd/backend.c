@@ -597,7 +597,7 @@ int etcd_del_ana_group(struct etcd_ctx *ctx, const char *port, int ana_grpid)
 	return ret;
 }
 
-#define NUM_SUBSYS_ATTRS 10
+#define NUM_SUBSYS_ATTRS 11
 static struct key_value_template subsys_template[NUM_SUBSYS_ATTRS] = {
 	{ .key = "attr_allow_any_host", .value = "1" },
 	{ .key = "attr_firmware", .value = "" },
@@ -608,7 +608,8 @@ static struct key_value_template subsys_template[NUM_SUBSYS_ATTRS] = {
 	{ .key = "attr_type", .value = "nvm" },
 	{ .key = "attr_qid_max", .value = "" },
 	{ .key = "attr_pi_enable", .value = "0" },
-	{ .key = "attr_cntlid_range", .value = "" },
+	{ .key = "attr_cntlid_min", .value = "0" },
+	{ .key = "attr_cntlid_max", .value = "65519" },
 };
 
 int etcd_fill_subsys_dir(struct etcd_ctx *ctx, void *buf,
@@ -681,7 +682,8 @@ int etcd_set_subsys_attr(struct etcd_ctx *ctx, const char *subsysnqn,
 	char *key;
 	int ret = -ENOENT;
 
-	if (!strcmp(attr, "attr_cntlid_range"))
+	if (!strcmp(attr, "attr_cntlid_min") ||
+	    !strcmp(attr, "attr_cntlid_max"))
 		return -EPERM;
 
 	ret = asprintf(&key, "%s/subsystems/%s/%s",
@@ -1315,6 +1317,31 @@ int etcd_test_cluster(struct etcd_ctx *ctx, const char *node)
 	ret = etcd_kv_get(ctx, key, NULL, 0);
 	free(key);
 	return ret;
+}
+
+int etcd_count_cluster(struct etcd_ctx *ctx)
+{
+	char *key;
+	struct etcd_kv *kvs;
+	int num_nodes = 0, ret, i;
+
+	ret = asprintf(&key, "%s/cluster", ctx->prefix);
+	if (ret)
+		return -ENOMEM;
+	ret = etcd_kv_range(ctx, key, &kvs);
+	if (ret < 0) {
+		free(key);
+		return ret;
+	}
+	for (i = 0; i < ret; i++) {
+		const char *attr = strrchr(kvs[i].value, '/');
+
+		if (attr && !strcmp(attr, "/node_name"))
+			num_nodes++;
+	}
+	etcd_kv_free(kvs, ret);
+	free(key);
+	return num_nodes;
 }
 
 int etcd_get_cluster_attr(struct etcd_ctx *ctx, const char *node,

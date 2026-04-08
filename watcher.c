@@ -227,39 +227,39 @@ int main(int argc, char **argv)
 	ret = upload_configfs(ctx, ctx->configfs, "ports");
 	if (ret < 0) {
 		fprintf(stderr, "failed to upload port configuration\n");
-		goto out_purge;
+		goto out_unregister;
 	}
 	ret = upload_configfs(ctx, ctx->configfs, "hosts");
 	if (ret < 0) {
 		fprintf(stderr, "failed to upload hosts configuration\n");
-		goto out_purge;
+		goto out_unregister;
 	}
 	ret = upload_configfs(ctx, ctx->configfs, "subsystems");
 	if (ret < 0) {
 		fprintf(stderr, "failed to upload subsystem configuration\n");
-		goto out_purge;
+		goto out_unregister;
 	}
 	ret = download_configfs(ctx, "hosts");
 	if (ret < 0) {
 		fprintf(stderr, "failed to download hosts configuration\n");
-		goto out_purge;
+		goto out_unregister;
 	}
 	ret = download_configfs(ctx, "subsystems");
 	if (ret < 0) {
 		fprintf(stderr, "failed to download subsystem configuration\n");
-		goto out_purge;
+		goto out_unregister;
 	}
 	ret = download_configfs(ctx, "ports");
 	if (ret < 0) {
 		fprintf(stderr, "failed to download port configuration\n");
-		goto out_purge;
+		goto out_unregister;
 	}
 	ret = pthread_create(&watcher_thr, NULL, etcd_watcher, ctx);
 	if (ret) {
 		watcher_thr = 0;
 		fprintf(stderr, "failed to start etcd watcher, error %d\n",
 			ret);
-		goto out_purge;
+		goto out_unregister;
 	}
 
 	pthread_mutex_lock(&lock);
@@ -273,11 +273,11 @@ int main(int argc, char **argv)
 	printf("waiting for watcher to terminate\n");
 	pthread_join(watcher_thr, NULL);
 
-out_purge:
-	configfs_purge_ports(ctx);
-	configfs_purge_subsystems(ctx);
 out_unregister:
 	configfs_unregister(ctx);
+
+	configfs_purge_ports(ctx);
+	configfs_purge_subsystems(ctx);
 out_cleanup:
 	etcd_exit(ctx);
 

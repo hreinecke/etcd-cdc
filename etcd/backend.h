@@ -106,6 +106,7 @@ int etcd_fill_cluster_dir(struct etcd_ctx *ctx, void *buf,
 int etcd_fill_cluster(struct etcd_ctx *ctx, const char *node,
 		      void *buf, fuse_fill_dir_t filler);
 int etcd_test_cluster(struct etcd_ctx *ctx, const char *node);
+int etcd_count_cluster(struct etcd_ctx *ctx);
 int etcd_get_cluster_attr(struct etcd_ctx *ctx, const char *node,
 			  const char *attr, char *value, size_t value_len);
 int etcd_set_cluster_id(struct etcd_ctx *ctx);

@@ -1531,7 +1531,8 @@ static int subsys_write(char *s, const char *subsysnqn,
 	if (!p) {
 		if (!strcmp(attr, "attr_type"))
 			return -EPERM;
-		if (!strcmp(attr, "attr_cntlid_range"))
+		if (!strcmp(attr, "attr_cntlid_min") ||
+		    !strcmp(attr, "attr_cntlid_max"))
 			return -EPERM;
 		ret = etcd_set_subsys_attr(ctx, subsysnqn, attr,
 					   buf, len);

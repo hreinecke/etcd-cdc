@@ -187,55 +187,6 @@ char *path_to_key(struct etcd_ctx *ctx, const char *path)
 	return key;
 }
 
-static void transform_cntlid_range(struct etcd_ctx *ctx, char *old, char *value)
-{
-	char new[1024], *p, *n;
-	int i = 0;
-
-	memset(new, 0, 1024);
-	p = old;
-	n = strchr(p, ',');
-	while (n) {
-		if (i != ctx->cluster_id) {
-			if (n == p) {
-				strcat(new, ",");
-			} else {
-				strncat(new, p, (n - p) + 1);
-			}
-		} else {
-			strcat(new, value);
-			strcat(new, ",");
-		}
-		p = n + 1;
-		n = strchr(p, ',');
-		i++;
-	}
-	strcpy(value, new);
-}
-
-static void clear_cntlid_range(struct etcd_ctx *ctx, char *old, char *new)
-{
-	char *p, *n;
-	int i = 0;
-
-	memset(new, 0, 1024);
-	if (!old)
-		return;
-	p = old;
-	n = strchr(p, ',');
-	while (n) {
-		if (i != ctx->cluster_id &&
-		    (n != p)) {
-			strncat(new, p, (n - p) + 1);
-		} else {
-			strcat(new, ",");
-		}
-		p = n + 1;
-		n = strchr(p, ',');
-		i++;
-	}
-}
-
 int configfs_update_key(struct etcd_ctx *ctx,
 			const char *dirname, const char *name)
 {
@@ -278,33 +229,10 @@ int configfs_update_key(struct etcd_ctx *ctx,
 		free(pathname);
 		return 0;
 	}
-	if (!strcmp(name, "attr_cntlid_min")) {
-		unsigned long cntlid, cluster_spacing;
-		char *eptr;
-
-		cntlid = strtoul(value, &eptr, 10);
-		if (cntlid == ULONG_MAX || value == eptr) {
-			fprintf(stderr, "%s: %s parse error\n",
-				__func__, name);
-			ret = -ERANGE;
-			goto out_free;
-		}
-		/* Controller ID 0 is invalid */
-		if (cntlid == 1) {
-			cntlid = 0;
-		}
-		cluster_spacing = CLUSTER_MAX_SIZE / ctx->cluster_size;
-		sprintf(value, "%lu-%lu", cntlid,
-			cntlid + cluster_spacing);
-		free(pathname);
-		ret = asprintf(&pathname, "%s/attr_cntlid_range", dirname);
-	}
-	if (!strcmp(name, "attr_cntlid_max")) {
-		if (configfs_debug)
-			printf("%s: skip attr %s\n",
-			       __func__, name);
-		goto out_free;
-	}
+	if (!strcmp(name, "attr_cntlid_min"))
+		sprintf(value, "%u", 0);
+	if (!strcmp(name, "attr_cntlid_max"))
+		sprintf(value, "%u", 65519);
 
 store_key:
 	key = path_to_key(ctx, pathname);
@@ -328,10 +256,6 @@ store_key:
 			free(key);
 			goto out_free;
 		}
-		if (!strcmp(name, "attr_cntlid_min")) {
-			memset(old, ',', ctx->cluster_size);
-			transform_cntlid_range(ctx, old, value);
-		}
 		if (configfs_debug)
 			printf("%s: upload key %s value '%s'\n", __func__,
 			       key, value);
@@ -343,13 +267,6 @@ store_key:
 		} else
 			ret = strlen(value);
 	} else if (strcmp(old, value)) {
-		if (!strcmp(name, "attr_cntlid_min")) {
-			transform_cntlid_range(ctx, old, value);
-			if (!strcmp(old, value)) {
-				free(key);
-				goto out_free;
-			}
-		}
 		if (configfs_debug)
 			printf("%s: update key %s value '%s'\n", __func__,
 			       key, value);
@@ -946,10 +863,13 @@ int configfs_purge_ports(struct etcd_ctx *ctx)
 int configfs_purge_subsystems(struct etcd_ctx *ctx)
 {
 	struct etcd_kv *kvs;
-	char *key, empty_range[1024];
-	int num_kvs, ret, i;
+	char *key;
+	int num_kvs, ret, i, num_nodes;
 
-	memset(empty_range, ',', 1024);
+	ret = etcd_count_cluster(ctx);
+	if (ret < 0)
+		return ret;
+	num_nodes = ret;
 
 	ret = asprintf(&key, "%s/subsystems", ctx->prefix);
 	if (ret < 0)
@@ -964,27 +884,11 @@ int configfs_purge_subsystems(struct etcd_ctx *ctx)
 		char value[1024], *p;
 
 		p = strrchr(kv->key, '/');
-		if (!p)
+		if (strcmp(p, "/attr_cntlid_min"))
 			continue;
-		if (strcmp(p, "/attr_cntlid_range"))
-			continue;
-
 		if (!kv->value)
 			continue;
-		clear_cntlid_range(ctx, kv->value, value);
-		if (!strcmp(kv->value, value))
-			continue;
-		if (configfs_debug)
-			printf("%s: new range '%s'\n",
-			       __func__, value);
-		ret = etcd_kv_update(ctx, kv->key, value, strlen(value));
-		if (ret < 0) {
-			if (configfs_debug)
-				fprintf(stderr, "%s: failed to update key '%s'\n",
-					__func__, kv->key);
-			break;
-		}
-		if (!strncmp(value, empty_range, ctx->cluster_size)) {
+		if (num_nodes == 0) {
 			strcpy(value, kv->key);
 			p = strrchr(value, '/');
 			*p = '\0';
