@@ -225,7 +225,7 @@ int configfs_update_key(struct etcd_ctx *ctx,
 		return 0;
 	}
 	if (!strcmp(name, "attr_cntlid_min"))
-		sprintf(value, "%u", 0);
+		sprintf(value, "%u", 1);
 	if (!strcmp(name, "attr_cntlid_max"))
 		sprintf(value, "%u", 65519);
 
