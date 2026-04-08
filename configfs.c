@@ -79,10 +79,11 @@ int update_ana_namespace(struct etcd_ctx *ctx, unsigned int ana_grpid,
 	if (ret < 0)
 		return -ENOMEM;
 
+	memset(value, 0, sizeof(value));
 	sprintf(value, "%d", enabled ? 1 : 0);
-	ret = etcd_kv_update(ctx, key, value, sizeof(value));
+	ret = etcd_kv_store(ctx, key, value, strlen(value));
 	free(key);
-	return ret;
+	return ret < 0 ? ret : 0;
 }
 
 int find_ana_port(struct etcd_ctx *ctx, unsigned int grpid,
