@@ -86,8 +86,8 @@ int update_ana_namespace(struct etcd_ctx *ctx, unsigned int ana_grpid,
 	return ret < 0 ? ret : 0;
 }
 
-int find_ana_port(struct etcd_ctx *ctx, unsigned int grpid,
-		  unsigned int portid, char *state)
+int update_ana_port(struct etcd_ctx *ctx, unsigned int grpid,
+		    unsigned int portid, char *state)
 {
 	char *key, value[256];
 	int ret;
@@ -97,8 +97,8 @@ int find_ana_port(struct etcd_ctx *ctx, unsigned int grpid,
 
 	ret = etcd_kv_get(ctx, key, value, sizeof(value));
 	if (ret < 0) {
-		ret = etcd_kv_update(ctx, key, ctx->node_name,
-				     strlen(ctx->node_name));
+		ret = etcd_kv_store(ctx, key, ctx->node_name,
+				    strlen(ctx->node_name));
 		if (ret < 0) {
 			fprintf(stderr,
 				"%s: failed to add port %u to ana group %u\n",
@@ -679,6 +679,53 @@ int validate_cntlid_range(struct etcd_ctx *ctx, char *dirname, char *subsys)
 	return ret;
 }
 
+int validate_ana_port(struct etcd_ctx *ctx, unsigned int portid)
+{
+	DIR *sd;
+	struct dirent *se;
+	char *dirname;
+	int ret, errors = 0;
+
+	ret = asprintf(&dirname, "%s/ports/%u/ana_groups",
+		       ctx->configfs, portid);
+	if (ret < 0)
+		return -ENOMEM;
+	sd = opendir(dirname);
+	if (!sd) {
+		fprintf(stderr, "Cannot open %s\n", dirname);
+		free(dirname);
+		return -errno;
+	}
+	while ((se = readdir(sd))) {
+		char state[64], *eptr, *path;
+		unsigned long ana_grpid;
+
+		if (!strcmp(se->d_name, ".") ||
+		    !strcmp(se->d_name, ".."))
+			continue;
+		if (se->d_type != DT_DIR)
+			continue;
+		errno = 0;
+		ana_grpid = strtoul(se->d_name, &eptr, 10);
+		if (errno || ana_grpid == UINT_MAX)
+			continue;
+
+		ret = asprintf(&path, "%s/%s/ana_state",
+			       dirname, se->d_name);
+		if (ret < 0)
+			continue;
+		ret = read_attr(path, state, sizeof(state));
+		free(path);
+		if (ret < 0)
+			continue;
+		ret = update_ana_port(ctx, ana_grpid, portid, state);
+		if (ret)
+			errors++;
+	}
+	closedir(sd);
+	return errors ? -EINVAL : 0;
+}
+
 /**
  * validate_cluster -- Validate local settings
  *
@@ -732,10 +779,16 @@ int configfs_validate_cluster(struct etcd_ctx *ctx)
 	}
 	closedir(sd);
 	free(dirname);
-	if (ret < 0)
+	if (ret < 0) {
+		fprintf(stderr, "%s: validation failed with error %d\n",
+			__func__, ret);
 		return ret;
-	if (errors)
+	}
+	if (errors) {
+		fprintf(stderr, "%s: %d errors during validation\n",
+			__func__, errors);
 		return -EINVAL;
+	}
 
 	ret = asprintf(&dirname, "%s/ports", ctx->configfs);
 	if (ret < 0)
@@ -765,7 +818,7 @@ int configfs_validate_cluster(struct etcd_ctx *ctx)
 			ret = -ERANGE;
 			break;
 		}
-		ret = etcd_validate_port(ctx, portid);
+		ret = validate_ana_port(ctx, portid);
 		if (ret < 0)
 			break;
 	}
@@ -815,7 +868,7 @@ int configfs_load_ana(struct etcd_ctx *ctx)
 		}
 		printf("%s: parsing %s portid %lu ana grpid %lu\n",
 		       __func__, kv->key, portid, ana_grpid);
-		ret = find_ana_port(ctx, ana_grpid, portid, kv->value);
+		ret = update_ana_port(ctx, ana_grpid, portid, kv->value);
 		if (ret < 0)
 			break;
 	}
