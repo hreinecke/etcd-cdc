@@ -608,7 +608,7 @@ static struct key_value_template subsys_template[NUM_SUBSYS_ATTRS] = {
 	{ .key = "attr_type", .value = "nvm" },
 	{ .key = "attr_qid_max", .value = "" },
 	{ .key = "attr_pi_enable", .value = "0" },
-	{ .key = "attr_cntlid_min", .value = "0" },
+	{ .key = "attr_cntlid_min", .value = "1" },
 	{ .key = "attr_cntlid_max", .value = "65519" },
 };
 

@@ -317,6 +317,10 @@ char *key_to_attr(struct etcd_ctx *ctx, char *key)
 	if (!strncmp(attr, "cluster", strlen("cluster")))
 		return NULL;
 
+	if (!strcmp(attr, "cntlid_min") ||
+	    !strcmp(attr, "cntlid_max"))
+		return NULL;
+
 	ret = asprintf(&path, "%s/%s", ctx->configfs, attr);
 	if (ret < 0) {
 		printf("%s: out of memory\n", __func__);
