@@ -224,25 +224,17 @@ int main(int argc, char **argv)
 		fprintf(stderr, "ANA validation failed\n");
 		goto out_unregister;
 	}
+
+	/* Synchronize with etcd */
 	ret = upload_configfs(ctx);
 	if (ret < 0)
 		goto out_unregister;
 
-	ret = download_configfs(ctx, "hosts");
-	if (ret < 0) {
-		fprintf(stderr, "failed to download hosts configuration\n");
+	ret = download_configfs(ctx);
+	if (ret < 0)
 		goto out_unregister;
-	}
-	ret = download_configfs(ctx, "subsystems");
-	if (ret < 0) {
-		fprintf(stderr, "failed to download subsystem configuration\n");
-		goto out_unregister;
-	}
-	ret = download_configfs(ctx, "ports");
-	if (ret < 0) {
-		fprintf(stderr, "failed to download port configuration\n");
-		goto out_unregister;
-	}
+
+	/* Start watcher */
 	ret = pthread_create(&watcher_thr, NULL, etcd_watcher, ctx);
 	if (ret) {
 		watcher_thr = 0;

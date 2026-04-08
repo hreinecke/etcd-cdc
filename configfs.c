@@ -380,7 +380,7 @@ int upload_configfs(struct etcd_ctx *ctx)
 	return ret;
 }
 
-int download_configfs(struct etcd_ctx *ctx, const char *dir)
+static int configfs_download_keys(struct etcd_ctx *ctx, const char *dir)
 {
 	struct etcd_kv *kvs;
 	char *key;
@@ -399,6 +399,33 @@ int download_configfs(struct etcd_ctx *ctx, const char *dir)
 		etcd_watch_cb(ctx, kv);
 	}
 	etcd_kv_free(kvs, ret);
+	return 0;
+}
+
+int download_configfs(struct etcd_ctx *ctx)
+{
+	int ret;
+
+	ret = configfs_download_keys(ctx, "hosts");
+	if (ret < 0) {
+		if (configfs_debug)
+			fprintf(stderr,
+				"failed to download hosts configuration\n");
+		return ret;
+	}
+	ret = configfs_download_keys(ctx, "subsystems");
+	if (ret < 0) {
+		if (configfs_debug)
+			fprintf(stderr,
+				"failed to download subsystem configuration\n");
+		return ret;
+	}
+	ret = configfs_download_keys(ctx, "ports");
+	if (ret < 0) {
+		if (configfs_debug)
+			fprintf(stderr,
+				"failed to download port configuration\n");
+	}
 	return ret;
 }
 
