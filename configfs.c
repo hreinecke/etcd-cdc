@@ -447,7 +447,7 @@ static int validate_cntlid(struct etcd_ctx *ctx, char *subsys,
 	}
 	/*
 	 * Controller ID 1 means 'first available controller',
-	 * so move it to '0' to simp;lify calculations.
+	 * so move it to '0' to simplify calculations.
 	 */
 	if (cntlid == 1)
 		cntlid = 0;
@@ -458,7 +458,7 @@ static int validate_cntlid(struct etcd_ctx *ctx, char *subsys,
 
 	if (cntlid % cluster_spacing) {
 		fprintf(stderr,
-			"%s: subsys %s cntlid_%s %lu not cluster boundary\n",
+			"%s: subsys %s cntlid_%s %lu not on cluster boundary\n",
 			__func__, subsys, cntlid_max ? "max": "min", cntlid);
 		if (cntlid_max) {
 			new_cntlid = cntlid_min + (cluster_spacing - 1);
@@ -473,7 +473,8 @@ static int validate_cntlid(struct etcd_ctx *ctx, char *subsys,
 		ret = sprintf(value, "%lu", new_cntlid);
 	} else if (cntlid_max &&
 		   (cntlid / cluster_spacing) != ctx->cluster_id + 1) {
-		fprintf(stderr, "%s: subsys %s cntlid_max %lu out of range for cluster\n",
+		fprintf(stderr,
+			"%s: subsys %s cntlid_max %lu out of range\n",
 			__func__, subsys, cntlid);
 		new_cntlid = cntlid_min + (cluster_spacing - 1);
 		fprintf(stderr, "%s: should be %lu\n", __func__,
@@ -625,6 +626,58 @@ static int validate_namespaces(struct etcd_ctx *ctx, const char *subsys)
 	return ret;
 }
 
+int validate_cntlid_range(struct etcd_ctx *ctx, char *dirname, char *subsys)
+{
+	char *path, value[64];
+	int ret;
+
+	ret = asprintf(&path, "%s/%s/attr_cntlid_min",
+		       dirname, subsys);
+	if (ret < 0)
+		return -ENOMEM;
+
+	ret = read_attr(path, value, sizeof(value));
+	if (ret < 0) {
+		if (configfs_debug)
+			fprintf(stderr, "%s: failed to read '%s', error %d\n",
+				__func__, path, ret);
+		free(path);
+		return ret;
+	}
+	if (validate_cntlid(ctx, subsys, value, false) == 0) {
+		ret = write_attr(path, value, strlen(value));
+		if (ret < 0) {
+			fprintf(stderr,
+				"%s: failed to update %s, error %d\n",
+				__func__, path, ret);
+			free(path);
+			return ret;
+		}
+	}
+	free(path);
+
+	ret = asprintf(&path, "%s/%s/attr_cntlid_max",
+		       dirname, subsys);
+	if (ret < 0)
+		return -ENOMEM;
+
+	ret = read_attr(path, value, sizeof(value));
+	if (ret < 0) {
+		free(path);
+		return ret;
+	}
+	if (validate_cntlid(ctx, subsys, value, true) == 0) {
+		ret = write_attr(path, value, strlen(value));
+		if (ret < 0) {
+			fprintf(stderr,
+				"%s: failed to update %s, error %d\n",
+				__func__, path, ret);
+		}
+	}
+	free(path);
+	return ret;
+}
+
 /**
  * validate_cluster -- Validate local settings
  *
@@ -663,75 +716,15 @@ int configfs_validate_cluster(struct etcd_ctx *ctx)
 		return -errno;
 	}
 	while ((se = readdir(sd))) {
-		char *path, value[1024];
-
 		if (!strcmp(se->d_name, ".") ||
 		    !strcmp(se->d_name, ".."))
 			continue;
 
 		if (se->d_type != DT_DIR)
 			continue;
-		ret = asprintf(&path, "%s/%s/attr_cntlid_min",
-			       dirname, se->d_name);
-		if (ret < 0) {
-			ret = -errno;
-			break;
-		}
-		ret = read_attr(path, value, sizeof(value));
-		if (ret < 0) {
-			free(path);
-			break;
-		}
-
-		ret = validate_cntlid(ctx, se->d_name, value, false);
-		if (ret < 0) {
-			free(path);
+		ret = validate_cntlid_range(ctx, dirname, se->d_name);
+		if (ret < 0)
 			errors++;
-			continue;
-		}
-		if (ret > 0) {
-			ret = write_attr(path, value, strlen(value));
-			if (ret < 0) {
-				fprintf(stderr,
-					"%s: failed to update, error %d\n",
-					__func__, ret);
-				free(path);
-				errors++;
-				continue;
-			}
-			ret = 0;
-		}
-		free(path);
-
-		ret = asprintf(&path, "%s/%s/attr_cntlid_max",
-			       dirname, se->d_name);
-		if (ret < 0) {
-			ret = -errno;
-			break;
-		}
-		ret = read_attr(path, value, sizeof(value));
-		if (ret < 0) {
-			free(path);
-			break;
-		}
-
-		ret = validate_cntlid(ctx, se->d_name, value, true);
-		if (ret < 0) {
-			free(path);
-			errors++;
-			continue;
-		}
-		if (ret > 0) {
-			ret = write_attr(path, value, strlen(value));
-			if (ret < 0) {
-				fprintf(stderr,
-					"%s: failed to update, error %d\n",
-					__func__, ret);
-				errors++;
-			}
-			ret = 0;
-		}
-		free(path);
 		ret = validate_namespaces(ctx, se->d_name);
 		if (ret < 0)
 			errors++;
@@ -813,11 +806,8 @@ int configfs_load_ana(struct etcd_ctx *ctx)
 			ret = -ERANGE;
 			break;
 		}
-		ret = etcd_validate_port(ctx, portid);
-		if (ret == 0)
+		if (etcd_validate_port(ctx, portid) == 0)
 			is_local = true;
-		else
-			ret = 0;
 
 		if (!strcmp(eptr, "/ana_groups/"))
 			continue;
