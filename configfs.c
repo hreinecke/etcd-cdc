@@ -321,17 +321,17 @@ static int configfs_upload_key(struct etcd_ctx *ctx, const char *dir,
 		if (!strcmp(se->d_name, "passthru"))
 			continue;
 
-		ret = configfs_update_key(ctx, dirname, se->d_name);
-		if (ret < 0)
-			break;
-
-		/* Do not set 'node' if no device path is set */
-		if (!strcmp(se->d_name, "device_path") && ret > 0) {
+		/* Set 'device_node' prior to setting 'device_path' */
+		if (!strcmp(se->d_name, "device_path")) {
 			ret = configfs_update_key(ctx, dirname,
 						  "device_node");
 			if (ret < 0)
 				break;
 		}
+		ret = configfs_update_key(ctx, dirname, se->d_name);
+		if (ret < 0)
+			break;
+
 		if (se->d_type == DT_DIR) {
 			ret = configfs_upload_key(ctx, dirname, se->d_name);
 			if (ret < 0)
