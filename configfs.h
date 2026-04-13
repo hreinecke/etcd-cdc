@@ -10,9 +10,9 @@
 #define _CONFIGFS_H
 
 int read_attr(char *attr_path, char *value, size_t value_len);
-char *path_to_key(struct etcd_ctx *ctx, const char *path);
+char *path_to_key(struct etcd_ctx *ctx, const char *dirname, const char *attr);
 int configfs_update_key(struct etcd_ctx *ctx, const char *dirname,
-			const char *name);
+			const char *attr);
 int upload_configfs(struct etcd_ctx *ctx);
 int download_configfs(struct etcd_ctx *ctx);
 int configfs_validate_cluster(struct etcd_ctx *ctx);

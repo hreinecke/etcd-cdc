@@ -153,36 +153,43 @@ int write_attr(char *attr_path, char *value, size_t value_len)
 	return len;
 }
 
-char *path_to_key(struct etcd_ctx *ctx, const char *path)
+char *path_to_key(struct etcd_ctx *ctx, const char *dirname, const char *attr)
 {
-	const char *attr = path + strlen(ctx->configfs) + 1;
+	const char *prefix = dirname + strlen(ctx->configfs) + 1;
 	char *key;
 	int ret;
 
-	ret = asprintf(&key, "%s/%s", ctx->prefix, attr);
+	ret = asprintf(&key, "%s/%s/%s", ctx->prefix, prefix, attr);
 	if (ret < 0)
 		return NULL;
 	return key;
 }
 
 int configfs_update_key(struct etcd_ctx *ctx,
-			const char *dirname, const char *name)
+			const char *dirname, const char *attr)
 {
 	struct stat st;
 	char *pathname, value[1024], old[1024], *key;
 	int ret;
 
 	memset(value, 0, sizeof(value));
-	ret = asprintf(&pathname, "%s/%s", dirname, name);
+	ret = asprintf(&pathname, "%s/%s", dirname, attr);
 	if (ret < 0)
 		return ret;
-	if (!strcmp(name, "addr_node") ||
-	    !strcmp(name, "device_node")) {
+	if (!strcmp(attr, "addr_node") ||
+	    !strcmp(attr, "device_node")) {
 		/* Synthetic attribute, not present in configfs */
 		strcpy(value, ctx->node_name);
 		ret = 0;
 		goto store_key;
 	}
+	/* Do not modify cntlid settings */
+	if (!strcmp(attr, "attr_cntlid_min") ||
+	    !strcmp(attr, "attr_cntlid_max")) {
+		free(pathname);
+		return 0;
+	}
+
 	ret = lstat(pathname, &st);
 	if (ret < 0) {
 		fprintf(stderr, "%s: attr %s error %d\n",
@@ -207,13 +214,9 @@ int configfs_update_key(struct etcd_ctx *ctx,
 		free(pathname);
 		return 0;
 	}
-	if (!strcmp(name, "attr_cntlid_min"))
-		sprintf(value, "%u", 1);
-	if (!strcmp(name, "attr_cntlid_max"))
-		sprintf(value, "%u", 65519);
 
 store_key:
-	key = path_to_key(ctx, pathname);
+	key = path_to_key(ctx, dirname, attr);
 	if (!key) {
 		free(pathname);
 		return -ENOMEM;

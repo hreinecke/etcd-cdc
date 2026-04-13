@@ -321,7 +321,8 @@ int process_inotify_event(char *iev_buf, int iev_len)
 				printf("unlink %s\n", subdir);
 		}
 		unmark_inotify(watcher->ctx, NULL, subdir);
-		key = path_to_key(watcher->ctx->etcd, subdir);
+		key = path_to_key(watcher->ctx->etcd,
+				  watcher->dirname, ev->name);
 		if (inotify_debug)
 			printf("%s: delete key %s\n",
 			       __func__, key);
