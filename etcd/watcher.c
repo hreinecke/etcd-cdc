@@ -57,7 +57,7 @@ static int parse_subsys_nsid(char *key, char **subsysnqn, int *nsid,
 			goto out;
 		ret = 0;
 	} else {
-		*nsid = -1;
+		*nsid = 0;
 		ret = 0;
 	}
 
