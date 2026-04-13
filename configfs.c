@@ -572,6 +572,7 @@ static int validate_namespaces(struct etcd_ctx *ctx, const char *subsys)
 				fprintf(stderr,
 					"%s: subsys %s namespace %lu is remote\n",
 					__func__, subsys, nsid);
+				ret = 0;
 				continue;
 			} else if (ret != -ENOENT) {
 				fprintf(stderr,
