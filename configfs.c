@@ -820,41 +820,24 @@ int configfs_load_ana(struct etcd_ctx *ctx)
 
 int configfs_purge_ports(struct etcd_ctx *ctx)
 {
-	struct etcd_kv *kvs;
-	char *key;
-	int num_kvs, i, ret;
+	unsigned int min_portid, max_portid;
+	char *min_key, *max_key;
+	int ret;
 
-	ret = asprintf(&key, "%s/ports", ctx->prefix);
+	min_portid = ctx->cluster_id << 8;
+	max_portid = min_portid + NODE_MAX_PORTS;
+	ret = asprintf(&min_key, "%s/ports/%u", ctx->prefix, min_portid);
 	if (ret < 0)
-		return ret;
-	ret = etcd_kv_range(ctx, key, &kvs);
-	free(key);
-	if (ret < 0)
-		return ret;
-	num_kvs = ret;
-	for (i = 0; i < num_kvs; i++) {
-		struct etcd_kv *kv = &kvs[i];
-		char *attr;
-
-		attr = strrchr(kv->key, '/');
-		if (!attr)
-			continue;
-		attr++;
-		if (strstr(kv->key, "referrals"))
-			continue;
-		if (kv->value && strcmp(kv->value, ctx->node_name))
-			continue;
-		*attr = '\0';
-		if (configfs_debug)
-			printf("Deleting port '%s'\n", kv->key);
-		ret = etcd_kv_delete(ctx, kv->key);
-		if (ret < 0) {
-			fprintf(stderr, "%s: failed to delete '%s'\n",
-				__func__, kv->key);
-			break;
-		}
+		return -ENOMEM;
+	ret = asprintf(&max_key, "%s/ports/%u", ctx->prefix, max_portid);
+	if (ret < 0) {
+		free(min_key);
+		return -ENOMEM;
 	}
-	etcd_kv_free(kvs, num_kvs);
+		
+	ret = etcd_kv_delete_range(ctx, min_key, max_key);
+	free(max_key);
+	free(min_key);
 	return ret;
 }
 
