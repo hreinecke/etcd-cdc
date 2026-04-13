@@ -25,24 +25,6 @@
 #include "etcd/backend.h"
 #include "configfs.h"
 
-static int parse_port(char *key, unsigned int *portid, char **attr)
-{
-	char *port, *s, *eptr;
-	unsigned long p;
-
-	port = strtok_r(key, "/", &s);
-	if (!port)
-		return -EINVAL;
-	errno = 0;
-	p = strtoul(port, &eptr, 10);
-	if (errno || p > UINT_MAX)
-		return -ERANGE;
-
-	*portid = p;
-	*attr = strtok_r(NULL, "/", &s);
-	return 0;
-}
-
 static int parse_subsys_nsid(char *key, char **subsysnqn, int *nsid,
 			     char **attr)
 {
@@ -250,49 +232,60 @@ out_close:
 	return ret;
 }
 
-static int validate_key(struct etcd_ctx *ctx, struct etcd_kv *kv)
+static char *key_to_path(struct etcd_ctx *ctx, struct etcd_kv *kv)
 {
 	int ret = 0;
-	char *key = kv->key + strlen(ctx->prefix) + 1, *attr;
+	char *key = kv->key + strlen(ctx->prefix) + 1, *path;
+
+	if (!strncmp(key, "cluster", strlen("cluster")))
+		return NULL;
 
 	if (!strncmp(key, "ports", 5)) {
-		char *arg = strdup(key + 6);
-		unsigned int portid;
+		char *attr;
+		unsigned long portid;
 
-		ret = parse_port(arg, &portid, &attr);
-		if (ret < 0) {
-			free(arg);
-			return ret;
+		errno = 0;
+		portid = strtoul(key + 6, &attr, 10);
+		if (errno || portid > 255 || !attr) {
+			printf("%s: failed to validate port '%s'\n",
+			       __func__, key);
+			return NULL;
 		}
-
+		attr++;
 		if (!strcmp(attr, "addr_node")) {
 			/* Skip updates to 'addr_node' */
-			free(arg);
-			return -EINVAL;
+			return NULL;
 		}
 		ret = etcd_validate_port(ctx, portid);
-		free(arg);
-	}
-	if (!strncmp(key, "subsystems", 10)) {
+		if (ret < 0)
+			return NULL;
+
+		ret = asprintf(&path, "%s/ports/%lu/%s",
+			       ctx->configfs, portid, attr);
+	} else if (!strncmp(key, "subsystems", 10)) {
 		int nsid = -1;
 		char *subsys;
-		char *arg = strdup(key + 11);
+		char *arg = strdup(key + 11), *attr;
 
 		ret = parse_subsys_nsid(arg, &subsys, &nsid, &attr);
-		if (ret < 0) {
+		if (ret < 0 || nsid < 0) {
 			printf("%s: failed to parse subsystem '%s'\n",
 			       __func__, arg);
 			free(arg);
-			return ret;
+			return NULL;
 		}
-		if (nsid < 0) {
-			free(arg);
-			return 0;
-		}
-		if (!strcmp(attr, "device_node")) {
+		if (nsid > 0 &&
+		    !strcmp(attr, "device_node")) {
 			/* Skip updates to 'device_node' */
 			free(arg);
-			return -EINVAL;
+			return NULL;
+		}
+
+		if (!strcmp(attr, "attr_cntlid_min") ||
+		    !strcmp(attr, "attr_cntlid_max")) {
+			/* Do not update cntlid settings */
+			free(arg);
+			return NULL;
 		}
 		/* Only store 'enable' or 'device_path' values if
 		 * running on the local node */
@@ -304,25 +297,10 @@ static int validate_key(struct etcd_ctx *ctx, struct etcd_kv *kv)
 				       __func__, subsys, nsid);
 		}
 		free(arg);
+		ret = asprintf(&path, "%s/%s", ctx->configfs, key);
+	} else {
+		ret = asprintf(&path, "%s/%s", ctx->configfs, key);
 	}
-	return ret;
-}
-
-char *key_to_attr(struct etcd_ctx *ctx, char *key)
-{
-	const char *attr = key + strlen(ctx->prefix) + 1;
-	char *path, *a;
-	int ret;
-
-	if (!strncmp(attr, "cluster", strlen("cluster")))
-		return NULL;
-
-	a = strrchr(attr, '/');
-	if (!strcmp(a, "/attr_cntlid_min") ||
-	    !strcmp(a, "/attr_cntlid_max"))
-		return NULL;
-
-	ret = asprintf(&path, "%s/%s", ctx->configfs, attr);
 	if (ret < 0) {
 		printf("%s: out of memory\n", __func__);
 		return NULL;
@@ -344,7 +322,7 @@ void etcd_watch_cb(void *arg, struct etcd_kv *kv)
 		printf("%s: add key %s value %s\n", __func__,
 		       kv->key, kv->value);
 
-	path = key_to_attr(ctx, kv->key);
+	path = key_to_path(ctx, kv);
 	if (!path) {
 		printf("%s: invalid path for key %s\n",
 		       __func__, kv->key);
@@ -360,12 +338,6 @@ void etcd_watch_cb(void *arg, struct etcd_kv *kv)
 		if (kv->deleted)
 			/* KV deleted and path not present, all done */
 			goto out_free;
-		ret = validate_key(ctx, kv);
-		if (ret < 0) {
-			printf("%s: skip key %s creation\n",
-			       __func__, kv->key);
-			goto out_free;
-		}
 		ret = create_value(path, kv->value);
 		if (ret < 0) {
 			/*
