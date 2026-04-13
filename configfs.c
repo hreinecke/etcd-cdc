@@ -442,10 +442,10 @@ static int validate_cntlid(struct etcd_ctx *ctx, char *subsys,
 	 */
 	if (cntlid == 1)
 		cntlid = 0;
-	else if (cntlid_max) {
+	else if (cntlid_max)
 		cntlid ++;
-		cntlid_min = ctx->cluster_id * cluster_spacing;
-	}
+
+	cntlid_min = ctx->cluster_id * cluster_spacing;
 
 	if (cntlid % cluster_spacing) {
 		fprintf(stderr,
@@ -617,8 +617,8 @@ int validate_cntlid_range(struct etcd_ctx *ctx, char *dirname, char *subsys)
 		ret = write_attr(path, value, strlen(value));
 		if (ret < 0) {
 			fprintf(stderr,
-				"%s: failed to update %s, error %d\n",
-				__func__, path, ret);
+				"%s: failed to update %s to '%s', error %d\n",
+				__func__, path, value, ret);
 			free(path);
 			return ret;
 		}
