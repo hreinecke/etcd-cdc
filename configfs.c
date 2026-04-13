@@ -631,7 +631,8 @@ int validate_ana_port(struct etcd_ctx *ctx, unsigned int portid)
 		return -ENOMEM;
 	sd = opendir(dirname);
 	if (!sd) {
-		fprintf(stderr, "Cannot open %s\n", dirname);
+		fprintf(stderr, "%s: Cannot open %s\n",
+			__func__, dirname);
 		free(dirname);
 		return -errno;
 	}
@@ -658,7 +659,7 @@ int validate_ana_port(struct etcd_ctx *ctx, unsigned int portid)
 		if (ret < 0)
 			continue;
 		ret = update_ana_port(ctx, ana_grpid, portid, state);
-		if (ret)
+		if (ret < 0)
 			errors++;
 	}
 	closedir(sd);
@@ -754,6 +755,8 @@ int configfs_validate_cluster(struct etcd_ctx *ctx)
 		errno = 0;
 		portid = strtoul(se->d_name, &eptr, 10);
 		if (errno || portid > UINT_MAX) {
+			fprintf(stderr, "%s: failed to parse port '%s'\n",
+				__func__, se->d_name);
 			ret = -ERANGE;
 			break;
 		}
