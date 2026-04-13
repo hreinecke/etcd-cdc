@@ -24,7 +24,9 @@ whih node in the cluster the namespace resides.
 Only when the 'device_node' attribute is set modifications to
 the 'device_path' attribute wiil be allowed.
 
-'ports' are handled in a similar manner; a new attribute 'addr_node'
-is presented which needs to be set to the node for which the 'addr_traddr'
-is a valid address. Only if the 'addr_node' attribute is set modificaitons
-to the 'addr_traddr' attribute are allowed.
+Configfs requires the port ID to be unique per node, and the discovery
+log page requires the port ID to be unique for the log page.
+So to avoid port renumbering the (local) port ID is restricted to
+255, and the top byte of the port ID is set to the cluster id when
+storing in etcd. With that we avoid port renumbering, and the port id
+also indicates on which node the port attributes should be stored.

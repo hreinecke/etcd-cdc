@@ -246,22 +246,17 @@ static char *key_to_path(struct etcd_ctx *ctx, struct etcd_kv *kv)
 
 		errno = 0;
 		portid = strtoul(key + 6, &attr, 10);
-		if (errno || portid > 255 || !attr) {
+		if (errno || portid > UINT_MAX || !attr) {
 			printf("%s: failed to validate port '%s'\n",
 			       __func__, key);
 			return NULL;
 		}
-		attr++;
-		if (!strcmp(attr, "addr_node")) {
-			/* Skip updates to 'addr_node' */
+		/* Only update settings for the local node */
+		if ((portid >> 8) != ctx->cluster_id)
 			return NULL;
-		}
-		ret = etcd_validate_port(ctx, portid);
-		if (ret < 0)
-			return NULL;
-
-		ret = asprintf(&path, "%s/ports/%lu/%s",
-			       ctx->configfs, portid, attr);
+		/* Mask out cluster id from port id */
+		ret = asprintf(&path, "%s/ports/%lu%s",
+			       ctx->configfs, portid & 0xFF, attr);
 	} else if (!strncmp(key, "subsystems", 10)) {
 		int nsid = -1;
 		char *subsys;

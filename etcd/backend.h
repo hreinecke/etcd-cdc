@@ -34,7 +34,6 @@ int etcd_set_port_attr(struct etcd_ctx *ctx, const char *port,
 int etcd_get_port_attr(struct etcd_ctx *ctx, const char *port,
 		       const char *attr, char *value, size_t value_len);
 int etcd_del_port(struct etcd_ctx *ctx, const char *port);
-int etcd_validate_port(struct etcd_ctx *ctx, unsigned int portid);
 
 int etcd_fill_ana_groups(struct etcd_ctx *ctx, const char *port,
 			 void *buf, fuse_fill_dir_t filler);
@@ -110,6 +109,7 @@ int etcd_count_cluster(struct etcd_ctx *ctx);
 int etcd_get_cluster_attr(struct etcd_ctx *ctx, const char *node,
 			  const char *attr, char *value, size_t value_len);
 int etcd_set_cluster_id(struct etcd_ctx *ctx);
+int etcd_validate_cluster_id(struct etcd_ctx *ctx, unsigned int cluster_id);
 
 #endif /* _ETCD_BACKEND_H */
 

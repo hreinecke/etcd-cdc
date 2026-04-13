@@ -290,7 +290,7 @@ int etcd_del_host(struct etcd_ctx *ctx, const char *nqn)
 	return ret;
 }
 
-#define NUM_PORT_ATTRS 7
+#define NUM_PORT_ATTRS 6
 static struct key_value_template port_template[NUM_PORT_ATTRS] = {
 	{ .key = "addr_trtype", .value = "" },
 	{ .key = "addr_adrfam", .value = "" },
@@ -298,7 +298,6 @@ static struct key_value_template port_template[NUM_PORT_ATTRS] = {
 	{ .key = "addr_trsvcid", .value = "" },
 	{ .key = "addr_treq", .value = "not specified" },
 	{ .key = "addr_tsas", .value = "none" },
-	{ .key = "addr_node", .value = "" },
 };
 
 int etcd_fill_port_dir(struct etcd_ctx *ctx, void *buf, fuse_fill_dir_t filler)
@@ -326,7 +325,17 @@ int etcd_add_port(struct etcd_ctx *ctx, const char *port,
 		  const char *traddr, const char *trsvcid)
 {
 	int ret, i;
+	unsigned long portid;
+	char *eptr;
 
+	errno = 0;
+	portid = strtoul(port, &eptr, 10);
+	if (errno || portid > UINT_MAX)
+		return -EINVAL;
+	/* The top byte must be the cluster id */
+	ret = etcd_validate_cluster_id(ctx, portid >> 8);
+	if (ret < 0)
+		return ret;
 	for (i = 0; i < NUM_PORT_ATTRS; i++) {
 		struct key_value_template *kv = &port_template[i];
 		char *key;
@@ -373,27 +382,11 @@ int etcd_set_port_attr(struct etcd_ctx *ctx, const char *port,
 	char *key, *eptr;
 	int ret = -ENOENT;
 
-	/* Do not allow to set an invalid node value */
-	if (!strcmp(attr, "addr_node")) {
-		ret = etcd_test_cluster(ctx, value);
-		if (ret < 0)
-			return -EINVAL;
-	}
-
 	errno = 0;
 	portid = strtoul(port, &eptr, 10);
 	if (errno || portid > UINT_MAX)
 		return -ERANGE;
 
-	/*
-	 * Only allow to modify 'addr_traddr' if 'addr_node' is set
-	 * to the local node.
-	 */
-	if (!strcmp(attr, "addr_traddr")) {
-		ret = etcd_validate_port(ctx, portid);
-		if (ret < 0)
-			return ret;
-	}
 	ret = asprintf(&key, "%s/ports/%lu/%s",
 		       ctx->prefix, portid, attr);
 	if (ret < 0)
@@ -431,29 +424,6 @@ int etcd_del_port(struct etcd_ctx *ctx, const char *port)
 
 	ret = etcd_kv_delete(ctx, key);
 	free(key);
-	return ret;
-}
-
-int etcd_validate_port(struct etcd_ctx *ctx, unsigned int portid)
-{
-	char *key, value[1024];
-	int ret = 0;
-
-	ret = asprintf(&key, "%s/ports/%u/device_node",
-		       ctx->prefix, portid);
-	if (ret < 0)
-		return -ENOMEM;
-	ret = etcd_kv_get(ctx, key, value, sizeof(value));
-	if (ret < 0) {
-		free(key);
-		return ret;
-	}
-	if (!strlen(value))
-		return -ENOENT;
-	if (strcmp(ctx->node_name, value))
-		ret = -EREMOTE;
-	else
-		ret = 0;
 	return ret;
 }
 
@@ -767,12 +737,6 @@ int etcd_add_subsys_port(struct etcd_ctx *ctx, const char *subsysnqn,
 {
 	char *key, value[1024];
 	int ret;
-
-	/* Only allow to create symlink if 'addr_node' is set */
-	ret = etcd_get_port_attr(ctx, port, "addr_node",
-				 value, sizeof(value));
-	if (ret >= 0 && !strlen(value))
-		return -EPERM;
 
 	ret = asprintf(&key, "%s/ports/%s/subsystems/%s",
 		       ctx->prefix, port, subsysnqn);
@@ -1407,5 +1371,38 @@ int etcd_set_cluster_id(struct etcd_ctx *ctx)
 			__func__, ctx->node_name);
 	}
 	ctx->cluster_id = cluster_id;
+	return ret;
+}
+
+int etcd_validate_cluster_id(struct etcd_ctx *ctx, unsigned int cluster_id)
+{
+	char key[256];
+	int ret, num_kvs, i;
+	struct etcd_kv *kvs;
+
+	sprintf(key, "%s/cluster/", ctx->prefix);
+	ret = etcd_kv_range(ctx, key, &kvs);
+	if (ret < 0)
+		return -ENOMEM;
+	num_kvs = ret;
+	ret = -ENOENT;
+	for (i = 0; i < num_kvs; i++) {
+		const char *attr = strrchr(kvs[i].key, '/');
+		unsigned long id;
+		char *eptr;
+
+		if (!attr || strcmp(attr, "/cluster_id"))
+			continue;
+
+		errno = 0;
+		id = strtoul(kvs[i].value, &eptr, 10);
+		if (errno || id > UINT_MAX)
+			continue;
+		if (id == cluster_id) {
+			ret = 0;
+			break;
+		}
+	}
+	etcd_kv_free(kvs, num_kvs);
 	return ret;
 }

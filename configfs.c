@@ -159,7 +159,19 @@ char *path_to_key(struct etcd_ctx *ctx, const char *dirname, const char *attr)
 	char *key;
 	int ret;
 
-	ret = asprintf(&key, "%s/%s/%s", ctx->prefix, prefix, attr);
+	if (!strncmp(prefix, "ports", 5)) {
+		unsigned long portid;
+		char *suffix;
+
+		errno = 0;
+		portid = strtoul(prefix + 6, &suffix, 10);
+		if (errno || portid > NODE_MAX_PORTS)
+			return NULL;
+		portid += ctx->cluster_id << 8;
+		ret = asprintf(&key, "%s/ports/%lu%s/%s",
+			       ctx->prefix, portid, suffix, attr);
+	} else
+		ret = asprintf(&key, "%s/%s/%s", ctx->prefix, prefix, attr);
 	if (ret < 0)
 		return NULL;
 	return key;
@@ -176,8 +188,7 @@ int configfs_update_key(struct etcd_ctx *ctx,
 	ret = asprintf(&pathname, "%s/%s", dirname, attr);
 	if (ret < 0)
 		return ret;
-	if (!strcmp(attr, "addr_node") ||
-	    !strcmp(attr, "device_node")) {
+	if (!!strcmp(attr, "device_node")) {
 		/* Synthetic attribute, not present in configfs */
 		strcpy(value, ctx->node_name);
 		ret = 0;
@@ -320,12 +331,6 @@ static int configfs_upload_key(struct etcd_ctx *ctx, const char *dir,
 		if (ret < 0)
 			break;
 
-		/* Do not set 'node' if no transport address is set */
-		if (!strcmp(se->d_name, "addr_traddr")) {
-			ret = configfs_update_key(ctx, dirname, "addr_node");
-			if (ret < 0)
-				break;
-		}
 		/* Do not set 'node' if no device path is set */
 		if (!strcmp(se->d_name, "device_path") && ret > 0) {
 			ret = configfs_update_key(ctx, dirname,
@@ -867,8 +872,6 @@ int configfs_purge_ports(struct etcd_ctx *ctx)
 		if (!attr)
 			continue;
 		attr++;
-		if (strcmp(attr, "addr_node"))
-			continue;
 		if (strstr(kv->key, "referrals"))
 			continue;
 		if (kv->value && strcmp(kv->value, ctx->node_name))

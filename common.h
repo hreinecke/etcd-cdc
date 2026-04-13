@@ -21,6 +21,8 @@ extern bool http_debug;
 #define CLUSTER_MAX_SIZE 65520
 #define CLUSTER_DEFAULT_SIZE 16
 
+#define NODE_MAX_PORTS 255
+
 extern int stopped;
 
 #endif
