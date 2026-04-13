@@ -424,7 +424,7 @@ static int validate_cntlid(struct etcd_ctx *ctx, char *subsys,
 			   char *value, bool cntlid_max)
 {
 	unsigned long cntlid, cntlid_min, new_cntlid;
-	unsigned int cluster_spacing, cluster_id;
+	unsigned int cluster_spacing;
 	char *eptr;
 	int ret = 0;
 
@@ -436,52 +436,23 @@ static int validate_cntlid(struct etcd_ctx *ctx, char *subsys,
 			__func__, subsys, value);
 		return -ERANGE;
 	}
-	/*
-	 * Controller ID 1 means 'first available controller',
-	 * so move it to '0' to simplify calculations.
-	 */
+	cntlid_min = ctx->cluster_id * cluster_spacing;
+	if (cntlid_max) {
+		new_cntlid = cntlid_min + (cluster_spacing - 1);
+	} else {
+		new_cntlid = cntlid_min;
+	}
+	/* Controller ID 0 is invalid, so the first cntlid is '1' */
 	if (cntlid == 1)
 		cntlid = 0;
-	else if (cntlid_max)
-		cntlid ++;
 
-	cntlid_min = ctx->cluster_id * cluster_spacing;
+	if (cntlid == new_cntlid)
+		return 0;
 
-	if (cntlid % cluster_spacing) {
-		fprintf(stderr,
-			"%s: subsys %s cntlid_%s %lu not on cluster boundary\n",
-			__func__, subsys, cntlid_max ? "max": "min", cntlid);
-		if (cntlid_max) {
-			new_cntlid = cntlid_min + (cluster_spacing - 1);
-			fprintf(stderr, "%s: should be %lu\n", __func__,
-				new_cntlid);
-		} else {
-			new_cntlid = (cntlid / cluster_spacing) *
-				cluster_spacing;
-			fprintf(stderr, "%s: should be %lu\n", __func__,
-				new_cntlid);
-		}
-		ret = sprintf(value, "%lu", new_cntlid);
-	} else if (cntlid_max &&
-		   (cntlid / cluster_spacing) != ctx->cluster_id + 1) {
-		fprintf(stderr,
-			"%s: subsys %s cntlid_max %lu out of range\n",
-			__func__, subsys, cntlid);
-		new_cntlid = cntlid_min + (cluster_spacing - 1);
-		fprintf(stderr, "%s: should be %lu\n", __func__,
-			new_cntlid);
-		ret = sprintf(value, "%lu", new_cntlid);
-	}
-	if (!cntlid_max) {
-		cluster_id = cntlid / cluster_spacing;
-		if (ctx->cluster_id != cluster_id) {
-			new_cntlid = ctx->cluster_id * cluster_spacing;
-			fprintf(stderr,
-				"%s: subsys %s cntlid_min mismatch (should be %lu)\n",
-				__func__, subsys, new_cntlid);
-			ret = sprintf(value, "%lu", new_cntlid);
-		}
-	}
+	fprintf(stderr, "%s: subsys %s cntlid_%s should be %lu\n",
+		__func__, subsys, cntlid_max ? "max" : "min",
+		new_cntlid);
+	ret = sprintf(value, "%lu", new_cntlid);
 	return ret;
 }
 
