@@ -74,6 +74,7 @@ int update_ana_port(struct etcd_ctx *ctx, unsigned int grpid,
 	char *key, value[256];
 	int ret;
 
+	portid |= ctx->cluster_id << 8;
 	ret = asprintf(&key, "%s/ana/%u/%s/%u",
 		       ctx->prefix, grpid, state, portid);
 
@@ -91,13 +92,6 @@ int update_ana_port(struct etcd_ctx *ctx, unsigned int grpid,
 		printf("%s: add new port %u to ana group %u\n",
 		       __func__, portid, grpid);
 		ret = 0;
-	} else {
-		bool is_local = strcmp(value, ctx->node_name);
-
-		printf("%s: using %s port %u grp %u state %s\n",
-		       __func__, is_local ? "local" : "remote",
-		       portid, grpid, state);
-		ret = is_local ? 0 : -EREMOTE;
 	}
 	free(key);
 	return ret;
@@ -188,7 +182,7 @@ int configfs_update_key(struct etcd_ctx *ctx,
 	ret = asprintf(&pathname, "%s/%s", dirname, attr);
 	if (ret < 0)
 		return ret;
-	if (!!strcmp(attr, "device_node")) {
+	if (!strcmp(attr, "device_node")) {
 		/* Synthetic attribute, not present in configfs */
 		strcpy(value, ctx->node_name);
 		ret = 0;
@@ -571,8 +565,6 @@ static int validate_namespaces(struct etcd_ctx *ctx, const char *subsys)
 				__func__, se->d_name);
 			continue;
 		}
-		printf("%s: validate %s namespace %lu\n",
-		       __func__, subsys, nsid);
 
 		ret = etcd_validate_namespace(ctx, subsys, nsid);
 		if (ret < 0) {
@@ -587,7 +579,8 @@ static int validate_namespaces(struct etcd_ctx *ctx, const char *subsys)
 					__func__, subsys, nsid, ret);
 				continue;
 			}
-			printf("%s: subsys %s namespace %lu does not exist\n",
+			/* Namespace is not registered with etcd */
+			printf("%s: subsys %s namespace %lu is valid\n",
 			       __func__, subsys, nsid);
 			ret = 0;
 		}
