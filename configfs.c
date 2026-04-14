@@ -834,7 +834,6 @@ int configfs_purge_ports(struct etcd_ctx *ctx)
 		free(min_key);
 		return -ENOMEM;
 	}
-		
 	ret = etcd_kv_delete_range(ctx, min_key, max_key);
 	free(max_key);
 	free(min_key);
@@ -843,50 +842,17 @@ int configfs_purge_ports(struct etcd_ctx *ctx)
 
 int configfs_purge_subsystems(struct etcd_ctx *ctx)
 {
-	struct etcd_kv *kvs;
-	char *key;
-	int num_kvs, ret, i, num_nodes;
+	char key[256];
+	int ret, num_nodes;
 
 	ret = etcd_count_cluster(ctx);
 	if (ret < 0)
 		return ret;
 	num_nodes = ret;
-
-	ret = asprintf(&key, "%s/subsystems", ctx->prefix);
-	if (ret < 0)
-		return ret;
-	ret = etcd_kv_range(ctx, key, &kvs);
-	free(key);
-	if (ret < 0)
-		return ret;
-	num_kvs = ret;
-	for (i = 0; i < num_kvs; i++) {
-		struct etcd_kv *kv = &kvs[i];
-		char value[1024], *p;
-
-		p = strrchr(kv->key, '/');
-		if (strcmp(p, "/attr_cntlid_min"))
-			continue;
-		if (!kv->value)
-			continue;
-		if (num_nodes == 0) {
-			strcpy(value, kv->key);
-			p = strrchr(value, '/');
-			*p = '\0';
-			if (configfs_debug)
-				printf("%s: delete subsystem '%s'\n",
-				       __func__, value);
-			ret = etcd_kv_delete(ctx, value);
-			if (ret < 0) {
-				if (configfs_debug)
-					fprintf(stderr,
-						"%s: failed to delete %s\n",
-						__func__, value);
-			}
-		}
-	}
-	etcd_kv_free(kvs, ret);
-	return ret;
+	if (num_nodes > 0)
+		return 0;
+	sprintf(key, "%s/subsystems", ctx->prefix);
+	return etcd_kv_delete(ctx, key);
 }
 
 int configfs_register(struct etcd_ctx *ctx)
