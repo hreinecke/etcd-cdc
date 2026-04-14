@@ -27,76 +27,6 @@
 #include "etcd/backend.h"
 #include "list.h"
 
-/*
- * ana/<grpid>/optimized/<portid>: node_name
- * ana/<grpid>/non_optimized/<portid>: node_name
- * ana/<grpid>/inaccessible/<portid>: node_name
- * ana/<grpid>/persistent_loss/<portid>: node_name
- * ana/<grpid>/subsystems/<subsys>/<nsid>/enabled: 0/1
- */
-
-int update_ana_namespace(struct etcd_ctx *ctx, unsigned int ana_grpid,
-			 const char *subsys, const char *ns, bool enabled)
-{
-	char value[16];
-	int ret;
-	char *key;
-
-	ret = asprintf(&key, "%s/ana/%u/subsystems/%s/nsid/%s/enabled",
-		       ctx->prefix, ana_grpid, subsys, ns);
-	if (ret < 0)
-		return -ENOMEM;
-
-	ret = etcd_kv_get(ctx, key, value, sizeof(value));
-	if (ret < 0) {
-		sprintf(value, "%d", enabled ? 1 : 0);
-		ret = etcd_kv_store(ctx, key, value, strlen(value));
-		if (ret < 0)
-			fprintf(stderr,
-				"%s: subsys %s ns %s failed to add grpid %u\n",
-				__func__, subsys, ns, ana_grpid);
-	} else if ((value[0] == '0' && enabled) ||
-		   (value[1] == '1' && !enabled)) {
-		sprintf(value, "%d", enabled ? 1 : 0);
-		ret = etcd_kv_update(ctx, key, value, strlen(value));
-		if (ret < 0)
-			fprintf(stderr,
-				"%s: subsys %s ns %s failed to update grpid %u\n",
-				__func__, subsys, ns, ana_grpid);
-	}
-	free(key);
-	return ret < 0 ? ret : 0;
-}
-
-int update_ana_port(struct etcd_ctx *ctx, unsigned int grpid,
-		    unsigned int portid, char *state)
-{
-	char *key, value[256];
-	int ret;
-
-	portid |= ctx->cluster_id << 8;
-	ret = asprintf(&key, "%s/ana/%u/%s/%u",
-		       ctx->prefix, grpid, state, portid);
-
-	ret = etcd_kv_get(ctx, key, value, sizeof(value));
-	if (ret < 0) {
-		ret = etcd_kv_store(ctx, key, ctx->node_name,
-				    strlen(ctx->node_name));
-		if (ret < 0) {
-			fprintf(stderr,
-				"%s: failed to add port %u to ana group %u\n",
-				__func__, portid, grpid);
-			free(key);
-			return ret;
-		}
-		printf("%s: add new port %u to ana group %u\n",
-		       __func__, portid, grpid);
-		ret = 0;
-	}
-	free(key);
-	return ret;
-}
-
 int read_attr(char *attr_path, char *value, size_t value_len)
 {
 	int fd, len;
@@ -456,26 +386,50 @@ static int validate_cntlid(struct etcd_ctx *ctx, char *subsys,
 	return ret;
 }
 
+/*
+ * ana/<grpid>/optimized/<portid>: node_name
+ * ana/<grpid>/non_optimized/<portid>: node_name
+ * ana/<grpid>/inaccessible/<portid>: node_name
+ * ana/<grpid>/persistent_loss/<portid>: node_name
+ * ana/<grpid>/subsystems/<subsys>/<nsid>: node_name
+ */
+
+int update_ana_namespace(struct etcd_ctx *ctx, unsigned int ana_grpid,
+			 const char *subsys, const char *ns)
+{
+	char value[256];
+	int ret;
+	char *key;
+
+	ret = asprintf(&key, "%s/ana/%u/subsystems/%s/nsid/%s",
+		       ctx->prefix, ana_grpid, subsys, ns);
+	if (ret < 0)
+		return -ENOMEM;
+
+	ret = etcd_kv_get(ctx, key, value, sizeof(value));
+	if (ret < 0) {
+		ret = etcd_kv_store(ctx, key, ctx->node_name,
+				    strlen(ctx->node_name));
+		if (ret < 0)
+			fprintf(stderr,
+				"%s: subsys %s ns %s failed to add grpid %u\n",
+				__func__, subsys, ns, ana_grpid);
+	} else if (strcmp(value, ctx->node_name)) {
+		fprintf(stderr,
+			"%s: subsys %s ns %s on remote node '%s'\n",
+			__func__, subsys, ns, value);
+		ret = -EREMOTE;
+	}
+	free(key);
+	return ret < 0 ? ret : 0;
+}
+
 static int validate_ana_grpid(struct etcd_ctx *ctx, const char *subsys,
 			      const char *ns)
 {
 	unsigned long ana_grpid;
 	char *path, value[1024], *eptr;
-	bool ns_enabled = false;
 	int ret;
-
-	ret = asprintf(&path, "%s/subsystems/%s/namespaces/%s/enable",
-		       ctx->configfs, subsys, ns);
-	if (ret < 0)
-		return -ENOMEM;
-
-	ret = read_attr(path, value, sizeof(value));
-	free(path);
-	if (ret < 0)
-		return -ENOENT;
-
-	if (strcmp(value, "1"))
-		ns_enabled = true;
 
 	ret = asprintf(&path, "%s/subsystems/%s/namespaces/%s/ana_grpid",
 		       ctx->configfs, subsys, ns);
@@ -493,8 +447,7 @@ static int validate_ana_grpid(struct etcd_ctx *ctx, const char *subsys,
 			subsys, ns, value);
 		return -ERANGE;
 	}
-	return update_ana_namespace(ctx, ana_grpid, subsys, ns,
-				   ns_enabled);
+	return update_ana_namespace(ctx, ana_grpid, subsys, ns);
 }
 
 static int validate_namespaces(struct etcd_ctx *ctx, const char *subsys)
@@ -618,12 +571,55 @@ int validate_cntlid_range(struct etcd_ctx *ctx, char *dirname, char *subsys)
 	return ret;
 }
 
+int update_ana_port(struct etcd_ctx *ctx, unsigned int grpid,
+		    unsigned int portid, char *state)
+{
+	char *key, value[256];
+	int ret;
+
+	portid |= ctx->cluster_id << 8;
+	ret = asprintf(&key, "%s/ana/%u/%s/%u",
+		       ctx->prefix, grpid, state, portid);
+
+	ret = etcd_kv_get(ctx, key, value, sizeof(value));
+	if (ret < 0) {
+		ret = etcd_kv_store(ctx, key, ctx->node_name,
+				    strlen(ctx->node_name));
+		if (ret < 0) {
+			fprintf(stderr,
+				"%s: failed to add port %u to ana group %u\n",
+				__func__, portid, grpid);
+			free(key);
+			return ret;
+		}
+		printf("%s: add new port %u state %s to ana group %u\n",
+		       __func__, portid, state, grpid);
+		ret = 0;
+	} else if (strcmp(value, ctx->node_name)) {
+		/* Non-local port */
+		if (!strcmp(state, "optimized") ||
+		    !strcmp(state, "non-optimized")) {
+			fprintf(stderr,
+				"%s: port %u mapped to non-local ana group %u\n",
+				__func__, portid, grpid);
+			ret = -EREMOTE;
+		}
+		fprintf(stderr,
+			"%s: port %u state %s mapped to non-local ana group %u\n",
+			__func__, portid, state, grpid);
+	}
+	free(key);
+	return ret;
+}
+
 int validate_ana_port(struct etcd_ctx *ctx, unsigned int portid)
 {
 	DIR *sd;
 	struct dirent *se;
-	char *dirname;
+	char *dirname, *path;
 	int ret, errors = 0;
+	bool found = false;
+	bool update = false;
 
 	ret = asprintf(&dirname, "%s/ports/%u/ana_groups",
 		       ctx->configfs, portid);
@@ -637,7 +633,7 @@ int validate_ana_port(struct etcd_ctx *ctx, unsigned int portid)
 		return -errno;
 	}
 	while ((se = readdir(sd))) {
-		char state[64], *eptr, *path;
+		char state[64], *eptr;
 		unsigned long ana_grpid;
 
 		if (!strcmp(se->d_name, ".") ||
@@ -647,7 +643,7 @@ int validate_ana_port(struct etcd_ctx *ctx, unsigned int portid)
 			continue;
 		errno = 0;
 		ana_grpid = strtoul(se->d_name, &eptr, 10);
-		if (errno || ana_grpid == UINT_MAX)
+		if (errno || ana_grpid >= UINT_MAX)
 			continue;
 
 		ret = asprintf(&path, "%s/%s/ana_state",
@@ -658,13 +654,79 @@ int validate_ana_port(struct etcd_ctx *ctx, unsigned int portid)
 		free(path);
 		if (ret < 0)
 			continue;
+		if (ana_grpid == (ctx->cluster_id << 8)) {
+			found = true;
+			if (strcmp(state, "optimized")) {
+				update = true;
+				continue;
+			}
+		}
 		ret = update_ana_port(ctx, ana_grpid, portid, state);
 		if (ret < 0)
 			errors++;
 	}
 	closedir(sd);
+	/* per-node ANA group not found */
+	if (!found) {
+		unsigned int ana_grpid = ctx->cluster_id << 8;
+
+		ret = asprintf(&path, "%s/%u", dirname, ana_grpid);
+		if (ret < 0)
+			return -ENOMEM;
+		printf("%s: creating ana group %u port %u\n",
+		       __func__, ana_grpid, portid);
+		ret = mkdir(path, 0755);
+		free(path);
+		if (ret < 0) {
+			fprintf(stderr, "%s: mkdir '%s' error %d\n",
+				__func__, path, errno);
+			return -errno;
+		}
+		update = true;
+	}
+	if (update) {
+		unsigned int ana_grpid = ctx->cluster_id << 8;
+		char *state = "optimized";
+
+		ret = asprintf(&path, "%s/%u/ana_state", dirname, ana_grpid);
+		if (ret < 0)
+			return -ENOMEM;
+		printf("%s: set ana group %u port %u to '%s'\n",
+		       __func__, ana_grpid, portid, state);
+		ret = write_attr(path, state, strlen(state));
+		free(path);
+		if (ret < 0) {
+			fprintf(stderr, "%s: write '%s' error %d\n",
+				__func__, path, errno);
+			return -errno;
+		}
+		ret = update_ana_port(ctx, ana_grpid, portid, state);
+		if (ret < 0)
+			errors++;
+	}
 	return errors ? -EINVAL : 0;
 }
+
+/*
+ * Validate ANA setting
+ *
+ * Policy: local namespaces are 'optimized'
+ *         non-local namespaces are 'inaccessible'
+ * -> Per-node ANA group <grpid> << 8
+ *
+ * Create per-node ANA groups
+ * iterate over all ports p
+ *   iterate over all ana groups a: state
+ *   -> check if a < 256
+ *      -> error if not
+ *   -> add per-node ANA group, set p to 'optimized'
+ * iterate over all namespaces
+ * -> check if grpid < 256
+ *    -> error if not
+ * -> check if grpid is per-node ANA group
+ *    -> update if not
+ * -> store ana/grpid/subsys/nsid: node
+ */
 
 /**
  * validate_cluster -- Validate local settings
