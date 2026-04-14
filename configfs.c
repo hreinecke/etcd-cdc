@@ -805,6 +805,45 @@ int configfs_load_ana(struct etcd_ctx *ctx)
 	return ret;
 }
 
+int configfs_purge_ana(struct etcd_ctx *ctx)
+{
+	struct etcd_kv *kvs;
+	char *key;
+	int ret, num_kvs, i;
+
+	ret = asprintf(&key, "%s/ana", ctx->prefix);
+	if (ret < 0)
+		return -ENOMEM;
+
+	ret = etcd_kv_range(ctx, key, &kvs);
+	free(key);
+	if (ret < 0)
+		return ret;
+
+	num_kvs = ret;
+	for (i = 0; i < num_kvs; i++) {
+		struct etcd_kv *kv = &kvs[i];
+		unsigned int grpid, portid;
+		char state[16];
+
+		key = kv->key + strlen(ctx->prefix) + 5;
+		ret = sscanf(key, "ana/%u/%s/%u",
+			     &grpid, state, &portid);
+		if (ret != 3)
+			continue;
+		if ((portid >> 8) == ctx->cluster_id) {
+			ret = etcd_kv_delete(ctx, kv->key);
+			if (ret < 0) {
+				fprintf(stderr,
+					"%s: failed to delete key '%s'\n",
+					__func__, kv->key);
+			}
+		}
+	}
+	etcd_kv_free(kvs, num_kvs);
+	return 0;
+}
+
 int configfs_purge_ports(struct etcd_ctx *ctx)
 {
 	unsigned int min_portid, max_portid;

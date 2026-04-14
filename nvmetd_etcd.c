@@ -254,6 +254,7 @@ out_unregister:
 
 	configfs_purge_ports(ctx);
 	configfs_purge_subsystems(ctx);
+	configfs_purge_ana(ctx);
 out_cleanup:
 	etcd_exit(ctx);
 
