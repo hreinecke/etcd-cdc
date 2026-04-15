@@ -571,6 +571,46 @@ int validate_cntlid_range(struct etcd_ctx *ctx, char *dirname, char *subsys)
 	return ret;
 }
 
+static int create_ana_port(struct etcd_ctx *ctx, unsigned int portid,
+			   unsigned int ana_grpid, char *state)
+{
+	char path[PATH_MAX], cur_state[64];
+	struct stat st;
+	int ret;
+
+	sprintf(path, "%s/ports/%u/ana_groups/%u", ctx->configfs,
+		portid, ana_grpid);
+	ret = lstat(path, &st);
+	if (ret < 0) {
+		printf("%s: creating ana group %u port %u\n",
+		       __func__, ana_grpid, portid);
+		ret = mkdir(path, 0755);
+		if (ret < 0) {
+			fprintf(stderr, "%s: mkdir '%s' error %d\n",
+				__func__, path, errno);
+			return -errno;
+		}
+	}
+	strcat(path, "/ana_state");
+	ret = read_attr(path, cur_state, sizeof(cur_state));
+	if (ret < 0) {
+		fprintf(stderr, "%s: read '%s' error %d\n",
+			__func__, path, errno);
+		return -errno;
+	}
+	if (strcmp(cur_state, state)) {
+		printf("%s: set ana group %u port %u to '%s'\n",
+		       __func__, ana_grpid, portid, state);
+		ret = write_attr(path, state, strlen(state));
+		if (ret < 0) {
+			fprintf(stderr, "%s: write '%s' error %d\n",
+				__func__, path, errno);
+			return -errno;
+		}
+	}
+	return 0;
+}
+
 int update_ana_port(struct etcd_ctx *ctx, unsigned int grpid,
 		    unsigned int portid, char *state)
 {
@@ -618,8 +658,6 @@ int validate_ana_port(struct etcd_ctx *ctx, unsigned int portid)
 	struct dirent *se;
 	char *dirname, *path;
 	int ret, errors = 0;
-	bool found = false;
-	bool update = false;
 
 	ret = asprintf(&dirname, "%s/ports/%u/ana_groups",
 		       ctx->configfs, portid);
@@ -654,56 +692,12 @@ int validate_ana_port(struct etcd_ctx *ctx, unsigned int portid)
 		free(path);
 		if (ret < 0)
 			continue;
-		if (ana_grpid == (ctx->cluster_id << 8)) {
-			found = true;
-			if (strcmp(state, "optimized")) {
-				update = true;
-				continue;
-			}
-		}
+
 		ret = update_ana_port(ctx, ana_grpid, portid, state);
 		if (ret < 0)
 			errors++;
 	}
 	closedir(sd);
-	/* per-node ANA group not found */
-	if (!found) {
-		unsigned int ana_grpid = ctx->cluster_id << 8;
-
-		ret = asprintf(&path, "%s/%u", dirname, ana_grpid);
-		if (ret < 0)
-			return -ENOMEM;
-		printf("%s: creating ana group %u port %u\n",
-		       __func__, ana_grpid, portid);
-		ret = mkdir(path, 0755);
-		free(path);
-		if (ret < 0) {
-			fprintf(stderr, "%s: mkdir '%s' error %d\n",
-				__func__, path, errno);
-			return -errno;
-		}
-		update = true;
-	}
-	if (update) {
-		unsigned int ana_grpid = ctx->cluster_id << 8;
-		char *state = "optimized";
-
-		ret = asprintf(&path, "%s/%u/ana_state", dirname, ana_grpid);
-		if (ret < 0)
-			return -ENOMEM;
-		printf("%s: set ana group %u port %u to '%s'\n",
-		       __func__, ana_grpid, portid, state);
-		ret = write_attr(path, state, strlen(state));
-		free(path);
-		if (ret < 0) {
-			fprintf(stderr, "%s: write '%s' error %d\n",
-				__func__, path, errno);
-			return -errno;
-		}
-		ret = update_ana_port(ctx, ana_grpid, portid, state);
-		if (ret < 0)
-			errors++;
-	}
 	return errors ? -EINVAL : 0;
 }
 
@@ -822,6 +816,10 @@ int configfs_validate_cluster(struct etcd_ctx *ctx)
 			ret = -ERANGE;
 			break;
 		}
+		ret = create_ana_port(ctx, portid, ctx->cluster_id << 8,
+				      "optimized");
+		if (ret)
+			break;
 		ret = validate_ana_port(ctx, portid);
 		if (ret < 0)
 			break;
@@ -943,6 +941,117 @@ int configfs_purge_subsystems(struct etcd_ctx *ctx)
 	return etcd_kv_delete(ctx, key);
 }
 
+static int configfs_setup_ana_group(struct etcd_ctx *ctx, unsigned int portid)
+{
+	DIR *sd;
+	struct dirent *se;
+	char dirname[PATH_MAX];
+	int ret;
+
+	sprintf(dirname, "%s/ports/%u/ana_groups",
+		ctx->configfs, portid);
+	sd = opendir(dirname);
+	if (!sd)
+		return -errno;
+	while ((se = readdir(sd))) {
+		unsigned long ana_grpid;
+		char path[PATH_MAX], state[64];
+		char *eptr;
+
+		if (!strcmp(se->d_name, ".") ||
+		    !strcmp(se->d_name, ".."))
+			continue;
+
+		if (se->d_type != DT_DIR)
+			continue;
+
+		errno = 0;
+		ana_grpid = strtoul(se->d_name, &eptr, 10);
+		if (errno || ana_grpid > UINT_MAX) {
+			fprintf(stderr,
+				"%s: failed to parse port %u grpid '%s'\n",
+				__func__, portid, se->d_name);
+			ret = -ERANGE;
+			break;
+		}
+		if (ana_grpid < 256)
+			continue;
+		sprintf(path, "%s/ana_state", dirname);
+		ret = read_attr(path, state, sizeof(state));
+		if (ret < 0) {
+			fprintf(stderr,
+				"%s: failed to read '%s', error %d\n",
+				__func__, path, errno);
+			continue;
+		}
+		/*
+		 * ANA Policy:
+		 * There will be one ANA group with state 'optimized'
+		 * with group ID set to the cluster ID + 1 << 8.
+		 * All ANA groups lower than 256 are ignored.
+		 * All other ANA gropus need to be in state 'inaccessible'.
+		 */
+		if (!strcmp(state, "optimized")) {
+			unsigned int cluster_id = (ana_grpid >> 8) - 1;
+			if (ctx->cluster_id == -1)
+				ctx->cluster_id = cluster_id;
+			else if (ctx->cluster_id != cluster_id) {
+				fprintf(stderr,
+					"%s: port %u non-local ANA group %lu\n",
+					__func__, portid, ana_grpid);
+				ret = -EAGAIN;
+				break;
+			}
+		} else if (strcmp(state, "inaccessible")) {
+			fprintf(stderr,
+				"%s: port %u ANA group %lu in state '%s'\n",
+				__func__, portid, ana_grpid, state);
+			ret = -EINVAL;
+			break;
+		}
+	}
+	closedir(sd);
+	return ret;
+}
+
+static int configfs_setup_ana_port(struct etcd_ctx *ctx)
+{
+	DIR *sd;
+	struct dirent *se;
+	char dirname[PATH_MAX];
+	int ret;
+
+	sprintf(dirname, "%s/ports", ctx->configfs);
+	sd = opendir(dirname);
+	if (!sd)
+		return -errno;
+	while ((se = readdir(sd))) {
+		unsigned long portid;
+		char *eptr;
+
+		if (!strcmp(se->d_name, ".") ||
+		    !strcmp(se->d_name, ".."))
+			continue;
+
+		if (se->d_type != DT_DIR)
+			continue;
+
+		errno = 0;
+		portid = strtoul(se->d_name, &eptr, 10);
+		if (errno || portid > UINT_MAX) {
+			fprintf(stderr, "%s: failed to parse port '%s'\n",
+				__func__, se->d_name);
+			ret = -ERANGE;
+			break;
+		}
+		ret = configfs_setup_ana_group(ctx, portid);
+		if (ret < 0)
+			break;
+	}
+	closedir(sd);
+	return ret;
+}
+
 int configfs_register(struct etcd_ctx *ctx)
 {
 	char name_key[256];
@@ -958,9 +1067,16 @@ int configfs_register(struct etcd_ctx *ctx)
 			__func__, ctx->node_id, ret);
 		return ret;
 	}
-	ret = etcd_set_cluster_id(ctx);
+	ret = configfs_setup_ana_port(ctx);
 	if (ret < 0) {
 		etcd_kv_delete(ctx, name_key);
+		return ret;
+	}
+	if (ctx->cluster_id == -1) {
+		ret = etcd_set_cluster_id(ctx);
+		if (ret < 0) {
+			etcd_kv_delete(ctx, name_key);
+		}
 	}
 	if (configfs_debug)
 		printf("%s: using cluster id %u\n",
