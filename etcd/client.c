@@ -1127,13 +1127,17 @@ etcd_parse_member_response (struct json_object *etcd_resp, void *arg)
 		if (!id_obj)
 			continue;
 		node_id = json_object_get_string(id_obj);
-		if (ctx->node_name &&
-		    !strcmp(ctx->node_name, node_name)) {
+		if (ctx->node_name) {
+			if (!strcmp(ctx->node_name, node_name)) {
+				if (etcd_debug)
+					printf("%s: node %s using id %s\n",
+					       __func__, node_name, node_id);
+				ctx->node_id = strdup(node_id);
+				goto out;
+			}
 			if (etcd_debug)
-				printf("%s: node %s using id %s\n",
-				       __func__, node_name, node_id);
-			ctx->node_id = strdup(node_id);
-			goto out;
+				printf("%s: skip node_name %s (default %s)\n",
+				       __func__, node_name, ctx->node_name);
 		}
 
 		urls_obj = json_object_object_get(mb_obj, "clientURLs");
