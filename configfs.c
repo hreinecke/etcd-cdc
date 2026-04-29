@@ -91,7 +91,7 @@ char *path_to_key(struct etcd_ctx *ctx, const char *dirname, const char *attr)
 		portid = strtoul(prefix + 6, &suffix, 10);
 		if (errno || portid > NODE_MAX_PORTS)
 			return NULL;
-		portid += ctx->cluster_id << 8;
+		portid += CLUSTER_PORT_OFFSET(ctx);
 		ret = asprintf(&key, "%s/ports/%lu%s/%s",
 			       ctx->prefix, portid, suffix, attr);
 	} else
@@ -617,7 +617,7 @@ int update_ana_port(struct etcd_ctx *ctx, unsigned int grpid,
 	char *key, value[256];
 	int ret;
 
-	portid |= ctx->cluster_id << 8;
+	portid |= CLUSTER_PORT_OFFSET(ctx);
 	ret = asprintf(&key, "%s/ana/%u/%s/%u",
 		       ctx->prefix, grpid, state, portid);
 
@@ -816,7 +816,7 @@ int configfs_validate_cluster(struct etcd_ctx *ctx)
 			ret = -ERANGE;
 			break;
 		}
-		ret = create_ana_port(ctx, portid, ctx->cluster_id << 8,
+		ret = create_ana_port(ctx, portid, ctx->cluster_id + 2,
 				      "optimized");
 		if (ret)
 			break;
@@ -891,7 +891,9 @@ int configfs_purge_ana(struct etcd_ctx *ctx)
 			     &grpid, state, &portid);
 		if (ret != 3)
 			continue;
-		if ((portid >> 8) == ctx->cluster_id) {
+		if (portid < NODE_MAX_PORTS)
+			continue;
+		if (PORT_CLUSTER_ID(portid) == ctx->cluster_id) {
 			ret = etcd_kv_delete(ctx, kv->key);
 			if (ret < 0) {
 				fprintf(stderr,
@@ -910,7 +912,7 @@ int configfs_purge_ports(struct etcd_ctx *ctx)
 	char *min_key, *max_key;
 	int ret;
 
-	min_portid = ctx->cluster_id << 8;
+	min_portid = CLUSTER_PORT_OFFSET(ctx);
 	max_portid = min_portid + NODE_MAX_PORTS;
 	ret = asprintf(&min_key, "%s/ports/%u", ctx->prefix, min_portid);
 	if (ret < 0)

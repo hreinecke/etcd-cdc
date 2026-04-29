@@ -23,6 +23,9 @@ extern bool http_debug;
 
 #define NODE_MAX_PORTS 255
 
+#define CLUSTER_PORT_OFFSET(c) (((c)->cluster_id + 1) << 8)
+#define PORT_CLUSTER_ID(p) (((p) >> 8) - 1)
+
 extern int stopped;
 
 #endif
