@@ -636,13 +636,6 @@ int update_ana_port(struct etcd_ctx *ctx, unsigned int grpid,
 		ret = 0;
 	} else if (PORT_CLUSTER_ID(portid) != ctx->cluster_id) {
 		/* Non-local port */
-		if (!strcmp(state, "optimized") ||
-		    !strcmp(state, "non-optimized")) {
-			fprintf(stderr,
-				"%s: port %u mapped to non-local ana group %u\n",
-				__func__, portid, grpid);
-			ret = -EREMOTE;
-		}
 		fprintf(stderr,
 			"%s: port %u state %s mapped to non-local ana group %u\n",
 			__func__, portid, state, grpid);
