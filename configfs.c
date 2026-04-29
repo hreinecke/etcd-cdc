@@ -617,7 +617,6 @@ int update_ana_port(struct etcd_ctx *ctx, unsigned int grpid,
 	char *key, value[256];
 	int ret;
 
-	portid |= CLUSTER_PORT_OFFSET(ctx);
 	ret = asprintf(&key, "%s/ana/%u/%s/%u",
 		       ctx->prefix, grpid, state, portid);
 
@@ -635,7 +634,7 @@ int update_ana_port(struct etcd_ctx *ctx, unsigned int grpid,
 		printf("%s: add new port %u state %s to ana group %u\n",
 		       __func__, portid, state, grpid);
 		ret = 0;
-	} else if (strcmp(value, ctx->node_name)) {
+	} else if (PORT_CLUSTER_ID(portid) != ctx->cluster_id) {
 		/* Non-local port */
 		if (!strcmp(state, "optimized") ||
 		    !strcmp(state, "non-optimized")) {
@@ -692,7 +691,10 @@ int validate_ana_port(struct etcd_ctx *ctx, unsigned int portid)
 		free(path);
 		if (ret < 0)
 			continue;
-
+		if (portid > NODE_MAX_PORTS)
+			continue;
+		/* Map local ports onto cluster ports */
+		portid |= CLUSTER_PORT_OFFSET(ctx);
 		ret = update_ana_port(ctx, ana_grpid, portid, state);
 		if (ret < 0)
 			errors++;
