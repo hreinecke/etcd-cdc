@@ -106,6 +106,7 @@ static int send_http(ne_session *ne_sess, ne_request *ne_req,
 static int parse_json(struct etcd_parse_data *data,
 		      const char *body, size_t len)
 {
+	enum json_tokener_error jerr;
 	json_object *obj;
 	size_t parsed;
 
@@ -116,17 +117,22 @@ static int parse_json(struct etcd_parse_data *data,
 	}
 	obj = json_tokener_parse_ex(data->tokener,
 				    body, len);
-	if (json_tokener_get_error(data->tokener) ==
-	    json_tokener_continue) {
+	jerr = json_tokener_get_error(data->tokener);
+	if (jerr == json_tokener_continue) {
 		data->len += len;
-		return len;
+		return data->len;
 	}
-	parsed = json_tokener_get_parse_end(data->tokener);
-	data->len += parsed;
-	if (http_debug)
-		printf("%s: http data (%ld bytes parsed)\n",
-		       __func__, data->len);
-
+	if (jerr != json_tokener_success) {
+		if (http_debug)
+			fprintf(stderr, "%s: json parse error\n", __func__);
+		obj = json_object_new_object();
+	} else {
+		parsed = json_tokener_get_parse_end(data->tokener);
+		data->len += parsed;
+		if (http_debug)
+			printf("%s: %ld bytes parsed)\n",
+			       __func__, data->len);
+	}
 	if (data->parse_cb)
 		data->parse_cb(obj, data->parse_arg);
 	else if (http_debug)
@@ -135,7 +141,7 @@ static int parse_json(struct etcd_parse_data *data,
 	json_object_put(obj);
 	json_tokener_reset(data->tokener);
 
-	return parsed;
+	return 0;
 }
 
 static int recv_http(ne_request *ne_req, struct etcd_parse_data *data)
@@ -171,18 +177,14 @@ static int recv_http(ne_request *ne_req, struct etcd_parse_data *data)
 			printf("%s: %ld bytes read\n", __func__, result_size);
 
 		ret = parse_json(data, result, result_size);
-		if (ret <= 0) {
-			if (http_debug)
-				printf("%s: No bytes processed: %s\n",
-				       __func__, result);
-			break;
-		}
-		if (result_size < alloc_size && !data->persistent)
+		if (ret > 0)
+			continue;
+		if (!data->persistent)
 			break;
 		memset(result, 0, alloc_size);
 		if (http_debug)
-			printf("%s: restarting, %d bytes parsed\n",
-			       __func__, ret);
+			printf("%s: restarting, %ld bytes parsed\n",
+			       __func__, data->len);
 	}
 	free(result);
 	return ret;
