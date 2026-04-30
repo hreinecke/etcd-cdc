@@ -80,11 +80,6 @@ static int init_discovery(struct nofuse_context *ctx)
 		       strlen(ctx->subsysnqn));
 		printf("set discovery NQN to %s\n", discovery_nqn);
 	}
-	if (etcd_test_subsys(ctx->etcd, ctx->subsysnqn) < 0) {
-		printf("adding discovery subsystem %s\n",
-		       ctx->subsysnqn);
-		ret = etcd_add_subsys(ctx->etcd, ctx->subsysnqn, "cur");
-	}
 	return ret;
 }
 
