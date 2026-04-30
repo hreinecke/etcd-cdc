@@ -319,7 +319,7 @@ void etcd_watch_cb(void *arg, struct etcd_kv *kv)
 
 	path = key_to_path(ctx, kv);
 	if (!path) {
-		printf("%s: invalid path for key %s\n",
+		printf("%s: skip key %s\n",
 		       __func__, kv->key);
 		return;
 	}
