@@ -211,7 +211,7 @@ retry:
 		return -ENOMEM;
 	ne_set_request_body_buffer(ne_req, post, postlen);
 	if (persistent)
-		ne_set_session_flag(ne_sess, NE_SESSFLAG_PERSIST, 1);	
+		ne_set_session_flag(ne_sess, NE_SESSFLAG_PERSIST, 1);
 
 	ret = send_http(ne_sess, ne_req, post, postlen);
 	if (ret)
@@ -225,32 +225,19 @@ retry:
 	parse_data.persistent = persistent;
 
 	ret = recv_http(ne_req, &parse_data);
-	if (ret < 0) {
-		ne_request_destroy(ne_req);
+	if (ret > 0 && ne_end_request(ne_req) == NE_RETRY) {
 		if (http_debug)
-			printf("%s: retry request %s after timeout\n",
+			printf("%s: retrying request %s",
 			       __func__, uri);
-		goto out_free;
-	}
-	switch (ne_end_request(ne_req)) {
-	case NE_RETRY:
-		if (http_debug)
-			printf("%s: retrying request %s\n", __func__, uri);
 		goto retry;
-	case NE_ERROR:
-		if (http_debug)
-			printf("%s: session status %s\n", __func__,
-			       ne_get_error(ne_sess));
-		break;
-	default:
-		break;
 	}
-out_free:
+
 	free(parse_data.uri);
 	json_tokener_free(parse_data.tokener);
 
 done:
 	free(post);
+	ne_request_destroy(ne_req);
 	return ret < 0 ? ret : 0;
 }
 
