@@ -86,13 +86,13 @@ static void *etcd_watcher(void *arg)
 	pthread_cleanup_push(delete_conn, conn);
 
 	memset(&ev, 0, sizeof(ev));
-	ev.ev_revision = start_revision;
 	ev.watch_cb = etcd_watch_cb;
 	ev.watch_arg = conn->ctx;
 
 	while (!stopped) {
+		ev.ev_revision = start_revision;
 		ret = etcd_kv_watch(conn, ctx->prefix, &ev, pthread_self());
-		if (ret && ret != -ETIME)
+		if (ret && ret != -ETIME && ret != -EIO)
 			break;
 	}
 	if (ret && ret != -ETIME)
